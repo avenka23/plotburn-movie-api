@@ -79,6 +79,24 @@ export type TMDBMovieDetails = {
 	vote_count: number;
 };
 
+// ---------------- TMDB CREDITS ----------------
+
+export type TMDBCreditsResponse = {
+	id: number;
+	cast: {
+		id: number;
+		name: string;
+		character: string;
+		order: number;
+	}[];
+	crew: {
+		id: number;
+		name: string;
+		job: string;
+		department: string;
+	}[];
+};
+
 // ---------------- MOVIE TRUTH STORAGE ----------------
 
 export type MovieTruth = {

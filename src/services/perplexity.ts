@@ -1,4 +1,5 @@
 import type { Env, MovieTruth, MovieMeta, PerplexityResponse } from '../types';
+import { fetchMovieCredits } from './tmdb';
 import { getTruthKey, USD_TO_INR } from '../constants';
 import { Logger } from '../utils/logger';
 
@@ -12,8 +13,17 @@ export async function getOrCreateMovieTruth(tmdbId: string, movieMeta: MovieMeta
 		return cached as MovieTruth;
 	}
 
-	// Step 2: Call Perplexity Sonar API for movie research
-	const userPrompt = `Find a story and reception breakdown for: ${movieMeta.title} (${movieMeta.release_date.split('-')[0]})${movieMeta.genres.length > 0 ? `, a ${movieMeta.genres.map((g) => g.name).join('/')} film` : ''}.`;
+	// Step 2: Fetch credits to get director name
+	const credits = await fetchMovieCredits(tmdbId, env, correlationId);
+	const directors = credits.crew.filter((member) => member.job === 'Director').map((d) => d.name);
+	const directorText = directors.length > 0 ? `, directed by ${directors.join(' & ')}` : '';
+
+	// Get language name from spoken_languages by matching original_language code
+	const languageInfo = movieMeta.spoken_languages.find((lang) => lang.iso_639_1 === movieMeta.original_language);
+	const languageName = languageInfo?.english_name || movieMeta.original_language.toUpperCase();
+
+	// Step 3: Call Perplexity Sonar API for movie research
+	const userPrompt = `Find a story and reception breakdown for: ${movieMeta.title} (${movieMeta.release_date.split('-')[0]})${movieMeta.genres.length > 0 ? `, a ${movieMeta.genres.map((g) => g.name).join('/')} film` : ''}${directorText}, originally in ${languageName}.`;
 
 	const body = {
 		model: 'sonar',
@@ -101,7 +111,7 @@ All information must be factual and grounded in real web sources. Do not invent 
 	);
 	const content = data.choices[0].message.content;
 
-	// Step 3: Store in TRUTH_KV
+	// Step 4: Store in TRUTH_KV
 	const truth: MovieTruth = {
 		source: 'perplexity:sonar',
 		fetchedAt: new Date().toISOString(),

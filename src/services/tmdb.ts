@@ -1,4 +1,4 @@
-import type { Env, TMDBNowPlayingResponse, TMDBMovieDetails } from '../types';
+import type { Env, TMDBNowPlayingResponse, TMDBMovieDetails, TMDBCreditsResponse } from '../types';
 import { Logger } from '../utils/logger';
 
 // TMDB Genre IDs to exclude (documentaries and music/concert films)
@@ -158,6 +158,53 @@ export async function fetchMovieDetails(tmdbId: string, env: Env, correlationId:
 		{
 			release_year: data.release_date.split('-')[0],
 			rating: data.vote_average,
+		},
+		undefined,
+		apiDuration
+	);
+
+	return data;
+}
+
+export async function fetchMovieCredits(tmdbId: string, env: Env, correlationId: string): Promise<TMDBCreditsResponse> {
+	const logger = new Logger(env, '/api/tmdb/movie-credits', 'GET', correlationId);
+
+	const apiStartTime = Date.now();
+	const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/credits?api_key=${env.TMDB_API_KEY}`);
+
+	const apiDuration = Date.now() - apiStartTime;
+
+	if (!res.ok) {
+		await logger.logExternalAPICall(
+			'TMDB (Movie Credits)',
+			{
+				movieId: tmdbId,
+				endpoint: 'credits',
+				stage: 'tmdb',
+			},
+			undefined,
+			`${res.status} ${res.statusText}`,
+			apiDuration
+		);
+		throw new Error('TMDB credits fetch failed');
+	}
+
+	const data = (await res.json()) as TMDBCreditsResponse;
+
+	// Extract director name(s)
+	const directors = data.crew.filter((member) => member.job === 'Director').map((d) => d.name);
+
+	await logger.logExternalAPICall(
+		'TMDB (Movie Credits)',
+		{
+			movieId: tmdbId,
+			endpoint: 'credits',
+			stage: 'tmdb',
+		},
+		{
+			cast_count: data.cast.length,
+			crew_count: data.crew.length,
+			directors: directors.join(', '),
 		},
 		undefined,
 		apiDuration
