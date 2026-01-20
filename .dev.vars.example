@@ -1,2 +1,13 @@
-TMDB_API_KEY=your_tmdb_key_here
-XAI_API_KEY=your_xai_key_here
+# Copy this file to .dev.vars and fill in your actual values
+# IMPORTANT: Never commit .dev.vars to git!
+
+# API Keys (Required)
+TMDB_API_KEY=your-tmdb-api-key-here
+XAI_API_KEY=your-xai-api-key-here
+PERPLEXITY_API_KEY=your-perplexity-api-key-here
+
+# Authentication (Optional for local dev - leave empty to disable auth)
+API_SECRET_KEY=
+
+# Note: KV namespaces are automatically bound in local dev
+# You don't need to configure them in .dev.vars

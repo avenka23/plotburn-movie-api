@@ -12,10 +12,37 @@
 	},
 	"kv_namespaces": [
 		{
+			"binding": "NOW_PLAYING_KV",
+			"id": "c986950acbd440b8a320a97752dcb5c7"
+		},
+		{
 			"binding": "ROAST_KV",
 			"id": "a3789c64906e493ead19402a608e4ee3"
+		},
+		{
+			"binding": "TRUTH_KV",
+			"id": "f41eb5355845400da6aef37c8f01e72a"
+		},
+		{
+			"binding": "LOG_KV",
+			"id": "f0970fbdb76845748d946f51c52874ac"
+		},
+		{
+			"binding": "DEBUG_KV",
+			"id": "45da5d5eea4d43d7842c911e446642f1"
+		},
+		{
+			"binding": "CRON_KV",
+			"id": "7662908b6425467ea96b7c5492c3ce0f"
 		}
-	]
+	],
+	"vars": {
+		"KV_VERSION": "v1",
+		"LOG_RETENTION_DAYS": 7
+	},
+	"triggers": {
+		"crons": ["30 16 * * *"]
+	}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

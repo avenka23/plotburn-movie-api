@@ -1,0 +1,167 @@
+import type { Env, TMDBNowPlayingResponse, TMDBMovieDetails } from '../types';
+import { Logger } from '../utils/logger';
+
+// TMDB Genre IDs to exclude (documentaries and music/concert films)
+const EXCLUDED_GENRE_IDS = [
+	99, // Documentary
+	10402, // Music
+];
+
+/**
+ * Checks if a movie should be excluded based on its genres
+ * @param genreIds - Array of TMDB genre IDs
+ * @returns true if the movie should be excluded
+ */
+function isExcludedGenre(genreIds: number[]): boolean {
+	return genreIds.some((id) => EXCLUDED_GENRE_IDS.includes(id));
+}
+
+/**
+ * Checks if a movie's release date falls within PlotBurn's release window:
+ * - Between (today - 10 days) and (today - 3 days) in UTC
+ * @param dateStr - Release date in YYYY-MM-DD format
+ * @returns true if the date is within the release window
+ */
+function isWithinReleaseWindow(dateStr: string): boolean {
+	if (!dateStr) return false;
+
+	const releaseDate = new Date(dateStr + 'T00:00:00Z'); // Parse as UTC midnight
+	const now = new Date();
+
+	// Calculate boundaries in UTC
+	const tenDaysAgo = new Date(now);
+	tenDaysAgo.setUTCDate(now.getUTCDate() - 10);
+	tenDaysAgo.setUTCHours(0, 0, 0, 0);
+
+	const threeDaysAgo = new Date(now);
+	threeDaysAgo.setUTCDate(now.getUTCDate() - 3);
+	threeDaysAgo.setUTCHours(23, 59, 59, 999);
+
+	return releaseDate >= tenDaysAgo && releaseDate <= threeDaysAgo;
+}
+
+export async function fetchNowPlaying(env: Env): Promise<TMDBNowPlayingResponse> {
+	const logger = new Logger(env, '/api/tmdb/now-playing', 'GET');
+
+	// Fetch first page to get total_pages
+	const apiStartTime = Date.now();
+	const firstRes = await fetch(`https://api.themoviedb.org/3/movie/now_playing?api_key=${env.TMDB_API_KEY}&page=1&region=IN`);
+
+	if (!firstRes.ok) {
+		const apiDuration = Date.now() - apiStartTime;
+		await logger.logExternalAPICall(
+			'TMDB (Now Playing)',
+			{ endpoint: 'now_playing', page: 1, region: 'IN' },
+			undefined,
+			`${firstRes.status} ${firstRes.statusText}`,
+			apiDuration
+		);
+		throw new Error('TMDB now_playing failed');
+	}
+
+	const firstData = (await firstRes.json()) as TMDBNowPlayingResponse;
+	const totalPages = firstData.total_pages;
+
+	// Start with first page results
+	let allResults = [...firstData.results];
+
+	// Fetch remaining pages sequentially to avoid rate limits
+	for (let page = 2; page <= totalPages; page++) {
+		const pageRes = await fetch(`https://api.themoviedb.org/3/movie/now_playing?api_key=${env.TMDB_API_KEY}&page=${page}&region=IN`);
+
+		if (!pageRes.ok) {
+			console.warn(`[TMDB] Failed to fetch page ${page}, skipping`);
+			continue;
+		}
+
+		const pageData = (await pageRes.json()) as TMDBNowPlayingResponse;
+		allResults.push(...pageData.results);
+	}
+
+	const totalDuration = Date.now() - apiStartTime;
+
+	console.log(`[TMDB] Fetched ${allResults.length} movies from ${totalPages} pages`);
+
+	// Filter movies to PlotBurn's release window: (today - 10 days) to (today - 3 days)
+	// Also exclude documentaries and music/concert films
+	const originalCount = allResults.length;
+	const filteredResults = allResults.filter(
+		(movie) => isWithinReleaseWindow(movie.release_date) && !isExcludedGenre(movie.genre_ids)
+	);
+	const filteredCount = filteredResults.length;
+
+	// Log filtering stats for monitoring
+	console.log(
+		`[TMDB] Filtered now-playing movies: ${filteredCount} kept, ${originalCount - filteredCount} removed (release window + genre filter)`
+	);
+
+	// Log successful API call with aggregated stats
+	await logger.logExternalAPICall(
+		'TMDB (Now Playing)',
+		{
+			endpoint: 'now_playing',
+			region: 'IN',
+			pages_fetched: totalPages,
+		},
+		{
+			total_movies: originalCount,
+			filtered_movies: filteredCount,
+			removed_movies: originalCount - filteredCount,
+		},
+		undefined,
+		totalDuration
+	);
+
+	// Return a new response object with filtered results and normalized pagination
+	return {
+		...firstData,
+		results: filteredResults,
+		total_pages: 1,
+		total_results: filteredCount,
+	};
+}
+
+export async function fetchMovieDetails(tmdbId: string, env: Env, correlationId: string): Promise<TMDBMovieDetails> {
+	const logger = new Logger(env, '/api/tmdb/movie-details', 'GET', correlationId);
+
+	const apiStartTime = Date.now();
+	const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${env.TMDB_API_KEY}`);
+
+	const apiDuration = Date.now() - apiStartTime;
+
+	if (!res.ok) {
+		await logger.logExternalAPICall(
+			'TMDB (Movie Details)',
+			{ 
+				movieId: tmdbId,
+				endpoint: 'movie', 
+				stage: 'tmdb' 
+			},
+			undefined,
+			`${res.status} ${res.statusText}`,
+			apiDuration
+		);
+		throw new Error('TMDB movie fetch failed');
+	}
+
+	const data = (await res.json()) as TMDBMovieDetails;
+
+	// Log successful API call
+	await logger.logExternalAPICall(
+		'TMDB (Movie Details)',
+		{
+			movieId: tmdbId,
+			movieTitle: data.title,
+			endpoint: 'movie',
+			stage: 'tmdb',
+		},
+		{
+			release_year: data.release_date.split('-')[0],
+			rating: data.vote_average,
+		},
+		undefined,
+		apiDuration
+	);
+
+	return data;
+}
