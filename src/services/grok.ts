@@ -216,7 +216,7 @@ BAD: Forcing positive comments when movie is universally panned
   "chips": ["2-3 SHORT, FUNNY, MEMORABLE tags (2-4 words). NOT boring descriptions. Examples: 'Cult Weirdos' NOT 'Cult Violence', 'Zombie Naps' NOT 'Infected Rest', 'Dog Scene' NOT 'Animal Rescue'. Make them shareable and meme-worthy."],
   "internet_vibe": ["Six reactions reflecting REAL internet behavior - what people ACTUALLY say online. Include: genuine criticism, ironic love for bad parts, fan wars, 'so bad it's good' takes, people defending illogical scenes, fights between camps. Reflect the ACTUAL sentiment based on the movie's reception and flaws. Don't force positivity - if it's bad, people will roast it. If it's divisive, show the debate."],
   "your_opinion": "Direct take on who should watch.",
-  "similar_movies": ["4 similar movies with brief context (genre, theme, or style connection). Don't say they're better - just similar. Example: 'Movie Name - same genre, different tone' or 'Movie Name - similar themes explored'"]
+  "similar_movies": ["4 similar movies that match the TONE and VIBE of the original. Brief context explaining the similarity."]
 }
 
 CRITICAL: All sections (headline, content, chips, internet_vibe, your_opinion, similar_movies) MUST follow the global language guidelines. No exceptions.
