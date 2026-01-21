@@ -241,16 +241,19 @@ export interface NowPlayingResponse {
 
 // ---------------- MOVIE ROAST RESPONSE TYPES ----------------
 
+export interface MovieRoast {
+	headline: string;
+	content: string;
+	chips: string[];
+	internet_vibe: string[];
+	your_opinion: string;
+	similar_movies: string[];
+}
+
 export interface MovieRoastResponse {
 	cached: boolean;
 	movie: MovieMeta;
-	roast: {
-		headline: string;
-		content: string;
-		internet_vibe: string[];
-		your_opinion: string;
-		recommendation: string[];
-	};
+	roast: MovieRoast;
 	generated_at: string;
 	disclaimer: string;
 	truth_source: string;
