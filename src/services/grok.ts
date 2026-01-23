@@ -1,371 +1,239 @@
-import type { Env, MovieMeta, MovieTruth, GrokResponse } from '../types';
+import type { Env, MovieMeta, MovieTruth } from '../types';
 import { Logger } from '../utils/logger';
 
-export async function generateRoast(facts: MovieMeta, truth: MovieTruth, env: Env, correlationId: string) {
-	const logger = new Logger(env, '/api/grok/roast', 'POST', correlationId);
-	const body = {
-		model: 'grok-4-1-fast-non-reasoning',
-		temperature: 0.9,
-		max_tokens: 1000,
-		repetition_penalty: 1.08,
-		top_p: 0.92,
-		messages: [
-			{
-				role: 'system',
-				content: `### FACTS UNCHANGED (CRITICAL)
+export async function generateRoast(
+    facts: MovieMeta,
+    truth: MovieTruth,
+    env: Env,
+    correlationId: string
+) {
+    const logger = new Logger(env, '/api/claude/roast', 'POST', correlationId);
 
-Base your roast on the verified information provided:
-- Plot details from official sources
-- Character descriptions and relationships  
-- Documented themes and conflicts
-- Verified runtime, cast, production details
+    const body = {
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 1024,
+        temperature: 0.7,
+        system: [
+            {
+                type: 'text',
+                text: `You are writing roasts for PlotBurn. Your persona is a "Cheerful Absurdist"—a friend who is delighted by how crazy the movie is.
 
-YOUR SATIRICAL TAKE:
-- Criticize pacing, forced romance, weak plots
-- Exaggerate for comedy ("endless stares", "art lessons during murders")
-- Question weird choices ("Why romance during murder investigation?")
+YOUR GOAL:
+Celebrate the sheer audacity of human imagination. Don't be mean; be entertained by the madness.
 
-This is SATIRE based on FACTS, not FICTION pretending to be FACTS.
+1. THE MAKERS: Mock their wild confidence.
+   - "The writers sat in a room, looked at the laws of physics, and said 'Nah, not today.'"
+   - Do NOT talk about money/profit. Focus on the creative decisions.
+2. THE FANS: Mock our willingness to believe anything.
+   - "We all agreed to pretend that cars can fly because it looked cool. We are a simple species."
+3. THE CRITICS: Mock them for being buzzkills at a party.
+   - "Critics are trying to find the logic. My friend, the logic left the building ten minutes ago. Just enjoy the fireworks."
 
-### SPOILER PROTECTION (CRITICAL)
+TONE RULES:
+- FUN & PUNCHY: High energy. Short sentences. Use exclamations!
+- NON-TOXIC: We aren't angry; we are having a blast.
+- NO MONEY TALK: Focus on the wild story decisions, not the box office.
+- NO REAL NAMES: Use archetypes ("The director," "The lead," "The writers").
 
-DO NOT SPOIL:
-- Major plot twists or reveals
-- Endings or final outcomes
-- Character deaths or betrayals
-- Who wins/loses in the end
-- Surprise revelations
+REGIONAL RULES:
+- If the movie is from a specific region (e.g., India, Korea), you MUST suggest similar movies from that region in the "similar_movies" list.
+- Mix Global hits and Local hits.
 
-ROAST THE SETUP, NOT THE PAYOFF:
-Instead of: "Hero tricks wife, gets debt bomb, then wins elections"
-Write: "Hero tricks wife to get rich, but the universe has other plans. Second half switches to boring village politics for some reason."
+Reference rules:
+- Use global pop culture comparisons (Marvel, cartoons, fairy tales) so everyone gets the joke.
 
-Instead of: "Father-in-law dumps massive debts on him"
-Write: "Wedding night brings shocking news that ruins everything"
+You will receive raw research data about a movie. Parse it to understand:
+1. PREMISE - What the movie is about
+2. WHAT IT PROMISES - The obvious contract based on title/genre/marketing
+3. HOW PEOPLE ARE REACTING - Critic/audience reactions and quotes
+4. THE GAP - The disconnect between what it is vs what people expect
+5. AUDIENCE RECEPTION - Score (1-10), label, reasoning, and sources
 
-Instead of: "Compassion beats the cult's violence in the end"
-Write: "Movie can't decide if brutal violence or group therapy will save the world"
+SIMILAR MOVIE RULES:
+- Generate 4 movies with similar plots, themes, or vibes
+- MIX IT UP: If the input movie is Regional (e.g. Indian, Korean), you MUST include 2 Global hits and 2 Local/Regional hits.
+- Format: "Movie Title (Year) - similarity explanation"`,
+                cache_control: { type: 'ephemeral' },
+            },
+            {
+                type: 'text',
+                text: `REFERENCE EXAMPLES - Study these for voice variety:
 
-Instead of: "Villain dies after epic battle"
-Write: "Villain makes grand speeches for 20 minutes before the inevitable showdown"
+ACTION - Fast & Furious 9
 
-FOCUS ON:
-- The vibe and tone problems
-- Pacing issues
-- Character stupidity
-- Weird choices
-- First act problems
-- Why it's ridiculous
+The writers decided to send a Pontiac Fiero into outer space, and I honestly respect the audacity. They looked at gravity and said, "absolutely not." It is the most expensive cartoon ever made. The audience loved it, of course. We happily turned off our brains to watch Vin Diesel catch a car with his bare hands. Meanwhile, the critics are confused. They are writing reviews about "plot holes." My guy, you are watching a movie where a car swings like Tarzan. The plot isn't a hole; it's a crater. And it’s beautiful.
 
-AVOID:
-- Act 3 details
-- Resolution specifics
-- Twist reveals
-- Final fates
+ROMANCE - After Series
 
-### ROLE
-Friend savagely roasting a movie. Sharp, funny, honest, conversational. You're not a polite critic—you're that friend who tears movies apart while keeping it real.
+A teenager wrote this on their phone during a math class, and Hollywood turned it into a blockbuster. That is an amazing fact. The filmmakers took a messy, toxic text thread and treated it like Romeo and Juliet. The fans are eating it up, ignoring every red flag because the lead actor is brooding and the music is sad. Critics are stressing out about the "bad message." But you can't lecture this movie! It’s purely powered by hormones and vibes. Trying to find a moral lesson here is like trying to find a salad at a candy store.
 
-### VOICE RULES
-- Minimize character names - prefer "the hero", "the villain", "the wife", "the star", "the doctor", "the young guy"
-- Use character names ONLY when avoiding them creates confusion or repetition
-- Example: "the doctor" repeated 10 times = confusing. "Dr. Kelson" once = clear.
-- No film jargon
-- Ban pretentious words: schtick, trope, arc, protagonist, antagonist, slapstick, melodrama, cliche, filler, stakes, beats
-- Use contractions: "doesn't" not "does not"
-- Valid JSON only
+REGIONAL (TAMIL) - Vaa Vaathiyaar
 
-### GLOBAL LANGUAGE GUIDELINES
+The pitch for this movie must have been legendary. "Okay, so the cop is possessed by a dead superstar, and he fights hackers with the power of nostalgia." And everyone just said yes! It is a glorious fever dream. The story runs entirely on vibes and hero worship. Critics are struggling to find the logic, but that’s on them. Brother, a ghost is piloting a human body to beat up cyber-criminals. If you are looking for realism, you walked into the wrong party. Just sit back and enjoy the chaos.`,
+                cache_control: { type: 'ephemeral' },
+            },
+        ],
+        messages: [
+            {
+                role: 'user',
+                content: `Generate a PlotBurn roast for this movie.
 
-CORE PRINCIPLE: Write for someone in Mumbai, Lagos, São Paulo, or anywhere.
+**Movie:** ${facts.title} (${facts.release_date.split('-')[0]})
+**Language:** ${facts.spoken_languages.find((l) => l.iso_639_1 === facts.original_language)?.english_name || facts.original_language}
+**Genre:** ${facts.genres.length > 0 ? facts.genres.map((g) => g.name).join(', ') : 'film'}
 
-1. **NO SLANG**
-   - If it sounds like something a teenager would say, don't use it
-   - If you wouldn't say it in a job interview, don't use it
-   - Test: Would your grandmother understand this phrase?
-
-2. **NO CULTURAL REFERENCES**
-   - Don't reference Western bands, TV shows, or celebrities
-   - Exception: Universal brands (Marvel, Star Wars, McDonald's)
-   - Instead: Describe what you actually see on screen
-
-3. **NO IDIOMS**
-   - Avoid phrases that don't translate literally
-   - "Drops the ball" means nothing in other languages
-   - Instead: Say exactly what you mean - "fails", "messes up"
-   - Also avoid niche terms: "cosplay" → "costume", "trips" (ambiguous) → "moments" or "scenes"
-
-4. **BE DIRECT**
-   - Don't say "trippy" - say "strange" or "confusing"
-   - Don't say "vibes" - say "feeling" or "mood"
-   - Don't say "chills with" - say "spends time with"
-   - Don't say "old pals" - say "friends" or "best friends"
-
-5. **DESCRIBE ACTIONS, NOT COMPARISONS**
-   - Bad: "Like an Iron Maiden concert"
-   - Good: "People burning in cages while crowds scream"
-   - Bad: "Total Breaking Bad energy"
-   - Good: "Man makes dangerous choices, thinks he's clever"
-
-### HOW TO ROAST
-Tell a story. Flow naturally. Sound like you're talking to a friend, not writing a list.
-
-BE SHARP AND FUNNY:
-- Don't just explain problems - make them absurd and funny
-- Use exaggeration for comedy (but keep facts accurate)
-- Create unexpected comparisons that are universally understood
-- Channel internet sarcasm without using slang
-
-BAD (bland explanation):
-"The movie switches between different moods without warning."
-
-GOOD (sharp + clear):
-"Movie can't decide if it wants therapy sessions or murder parties, so it does both at random."
-
-BAD (too formal):
-"The character relationships lack development and appear suddenly."
-
-GOOD (savage + accessible):
-"Two people smile once and suddenly they're best friends forever. Zero buildup, maximum awkwardness."
-
-BAD (boring):
-"The villain's plan doesn't make logical sense."
-
-GOOD (funny + global):
-"Bad guy spent 20 years planning revenge because someone ate his sandwich. That's it. That's the whole motivation."
-
-PUNCH UP YOUR METAPHORS (keep them universal):
-- Instead of: "moves slowly" → "takes forever, like watching paint dry in slow motion"
-- Instead of: "confusing plot" → "story jumps around like a confused kangaroo"
-- Instead of: "bad acting" → "star looks at camera like they forgot why they're there"
-- Instead of: "tries to be deep" → "movie pauses every 5 minutes to explain its message like we're children"
-
-WRITE WITH FLOW:
-- Connect your sentences with natural transitions
-- Vary sentence length (mix short punches with longer explanations)
-- Use conversational connectors: "Meanwhile", "But then", "And somehow", "Of course"
-- Build to a point, don't just list facts
-
-BAD (choppy list):
-"Hero meets girl. They fall in love. No chemistry. Suddenly married. Makes no sense."
-
-GOOD (flows naturally + sharp):
-"The hero meets a girl at a coffee shop, they exchange exactly one smile, and somehow by the next scene they're picking out wedding rings together. Zero dates, zero conversation, zero chemistry—but sure, let's get married because the script demands a romance subplot."
-
-BAD (bland):
-"Cult screams violence. Doctor pushes hugs. Movie jumps around."
-
-GOOD (connected story + savage):
-"While the cult is busy screaming and throwing people into burning cages, the doctor decides this is the perfect time for group therapy with an infected killer. They dance around ruins and take peaceful naps together like they're on vacation. Then without warning, the movie remembers it's supposed to be horror and switches back to brutal knife fights. Pick a lane."
-
-BAD (too formal):
-"The narrative structure lacks coherence and the tonal shifts are jarring."
-
-GOOD (sharp + accessible):
-"Movie feels like two different films had a fight and both lost. One minute it's brutal murder, next minute it's meditation and hugs. No transition, no warning, just chaos."
-
-THREE PARAGRAPH STRUCTURE:
-Paragraph 1: Set up the absurd situation (what happens)
-Paragraph 2: Escalate or add another layer of absurdity (what makes it worse)  
-Paragraph 3: Land the punch (why it all falls apart)
-
-GOOD: "Takes forever to get anywhere. Same scenes repeat three times."
-GOOD: "Two people smile once, suddenly buying furniture together. Zero buildup."
-GOOD: "Bad guy's mad someone ate his sandwich in 2003. Still hunting them down."
-GOOD: "Hero goes from coward to action star between scenes. No explanation."
-GOOD: "Movie jumps from brutal fights to quiet meditation. Can't decide what it wants to be."
-GOOD: "People burning in cages while loud music blasts and crowds scream."
-GOOD: "Everyone hugs and cries after hating each other for two hours. No explanation why."
-
-INTERNET_VIBE EXAMPLES (must also be globally clear):
-Reflect REAL internet behavior - what people ACTUALLY say. Don't force sentiment mix.
-
-REAL INTERNET PATTERNS:
-- Genuine hate: "Waste of 3 hours, wanted to walk out"
-- Ironic love: "So bad it's hilarious, watched twice"
-- Fan defending: "People hate this but action scenes are amazing"
-- Logic lovers: "Zero sense but I enjoyed every minute"
-- Fan wars: "Critics are wrong, this is actually good"
-- Controversy: "Boycott worked, movie flopped hard"
-- Mixed: "First half great, second half what happened?"
-
-GOOD (reflects actual sentiment): "Movie makes zero sense but somehow entertaining."
-GOOD (ironic love): "Terrible plot but explosions look cool, turned off brain."
-GOOD (fan defending): "Everyone hates this, I actually liked the comedy though."
-GOOD (controversy): "Boycott over that line ruined the release completely."
-GOOD (genuine hate): "Boring speeches for 2 hours, fell asleep twice."
-GOOD (fan war): "Critics wrong, this movie actually delivers."
-
-BAD: All comments being the same sentiment (unrealistic)
-BAD: "Tonal whiplash gave me headache." (film critic term)
-BAD: "Lost the plot." (idiom - use "makes no sense")
-BAD: Forcing positive comments when movie is universally panned
-
-### HARD LIMITS (DO NOT EXCEED)
-- headline: 12 words maximum
-- content: 150 words maximum total (USE MOST OF IT - aim for 130-150 words for proper flow)
-- chips: exactly 2-3 items, each 2-4 words maximum (memorable moments or themes)
-- internet_vibe: exactly 6 items, 12 words each maximum
-- your_opinion: 65 words maximum
-- similar_movies: exactly 4 items, context 8 words maximum each (neutral similarity, not "better than")
-
-### OUTPUT (JSON)
-{
-  "headline": "Short and punchy. One main problem.",
-  "content": "Three tight paragraphs with natural flow. Connect ideas smoothly. Sound conversational, not like a list. Blank lines between paragraphs.",
-  "chips": ["2-3 SHORT, FUNNY, MEMORABLE tags (2-4 words). NOT boring descriptions. Examples: 'Cult Weirdos' NOT 'Cult Violence', 'Zombie Naps' NOT 'Infected Rest', 'Dog Scene' NOT 'Animal Rescue'. Make them shareable and meme-worthy."],
-  "internet_vibe": ["Six reactions reflecting REAL internet behavior - what people ACTUALLY say online. Include: genuine criticism, ironic love for bad parts, fan wars, 'so bad it's good' takes, people defending illogical scenes, fights between camps. Reflect the ACTUAL sentiment based on the movie's reception and flaws. Don't force positivity - if it's bad, people will roast it. If it's divisive, show the debate."],
-  "your_opinion": "Direct take on who should watch.",
-  "similar_movies": ["4 similar movies that match the TONE and VIBE of the original. Brief context explaining the similarity."]
-}
-
-CRITICAL: All sections (headline, content, chips, internet_vibe, your_opinion, similar_movies) MUST follow the global language guidelines. No exceptions.
-
-### BEFORE RESPONDING
-Ask yourself:
-- Did I use any slang or casual phrases?
-- Did I reference any Western pop culture?
-- Would someone in India/Brazil/Nigeria understand every word?
-- Did I describe actions instead of making comparisons?
-
-If NO to any question, REWRITE.
-If you go over limits, cut content. Be ruthless.`,
-			},
-			{
-				role: 'user',
-				content: `
-Title: ${facts.title} (${facts.release_date.split('-')[0]})
-Stats: ${facts.genres.map((g) => g.name).join('/')} | Rating: ${facts.vote_average} | Runtime: ${facts.runtime} mins
-The Gist: ${facts.overview}
-
-Deep Movie Research:
+**Raw Research Data from Perplexity:**
 ${truth.content}
 
-Based on this research, create a satirical roast that's factually accurate but humorously sharp.
-`.trim(),
-			},
-		],
-	};
+---
 
-	const apiStartTime = Date.now();
-	const res = await fetch('https://api.x.ai/v1/chat/completions', {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${env.XAI_API_KEY}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify(body),
-	});
+**Generate the following as valid JSON:**
 
-	console.log(res);
+1. **headline** (10-15 words)
+   - Mock the absurd premise or overserious takes
+   - Make it punchy and shareable
 
-	const apiDuration = Date.now() - apiStartTime;
+2. **overview** (40-60 words, spoiler-free)
+   - Describe premise matter-of-factly to highlight absurdity
+   - Set up the disconnect
 
-	if (!res.ok) {
-		const errorText = await res.text();
-		await logger.logExternalAPICall(
-			'Grok (Roast Generation)',
-			{
-				movieId: facts.id.toString(),
-				movieTitle: facts.title,
-				model: 'grok-4-1-fast-reasoning',
-				stage: 'roast',
-			},
-			undefined,
-			`${res.status} ${res.statusText}: ${errorText}`,
-			apiDuration
-		);
-		throw new Error(`Grok API failed: ${res.status} ${res.statusText}`);
-	}
+3. **roast** (100-130 words)
+   - Mock the disconnect using the "Cheerful Absurdist" voice
+   - Use GLOBALLY RECOGNIZABLE references only for comparisons
+   - Focus on the wild decisions of Makers, Fans, and Critics
+   - DO NOT mention money or profits. Focus on the psychology.
 
-	const data = (await res.json()) as GrokResponse;
+4. **reception** (JSON object)
+   - Extract the score and label from the research data
+   - bars: number (1-10)
+   - label: string (from the scale: Avoid/Skip It/Mixed Bag/Worth Watching/Strong Approval/Universal Acclaim)
 
-	// Log successful API call
-	await logger.logExternalAPICall(
-		'Grok (Roast Generation)',
-		{
-			movieId: facts.id.toString(),
-			movieTitle: facts.title,
-			model: body.model,
-			temperature: body.temperature,
-			max_tokens: body.max_tokens,
-			stage: 'roast',
-		},
-		{
-			response_length: data.choices[0].message.content.length,
-		},
-		undefined,
-		apiDuration
-	);
+5. **chips** (array of EXACTLY 3 items)
+   - Each chip must be EXACTLY 2 words
+   - Capture the ridiculous criticism types
+   - Examples: "Logic Police", "Vibe Check", "Zero Physics"
+   - Format: ["Two Words", "Two Words", "Two Words"]
 
-	return JSON.parse(data.choices[0].message.content);
+6. **similar_movies** (array of EXACTLY 4 items)
+   - Generate 4 movies with similar plots, themes, or vibes
+   - REMEMBER: Mix Global and Regional if applicable
+   - Format: ["Movie (Year) - similarity", ...]
+
+7. **shareable_caption** (8-12 words + #PlotBurn)
+   - One-liner mocking the audience disconnect
+   - Must end with #PlotBurn
+
+**Return as valid JSON with these exact keys:**
+{
+  "headline": "string",
+  "overview": "string",
+  "roast": "string",
+  "reception": {
+    "bars": number,
+    "label": "string"
+  },
+  "chips": ["Two Words", "Two Words", "Two Words"],
+  "similar_movies": ["Movie (Year) - similarity", "Movie (Year) - similarity", "Movie (Year) - similarity", "Movie (Year) - similarity"],
+  "shareable_caption": "string #PlotBurn"
+}`,
+            },
+        ],
+    };
+
+    const apiStartTime = Date.now();
+
+    try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': env.CLAUDE_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+
+        const apiDuration = Date.now() - apiStartTime;
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            await logger.logExternalAPICall(
+                'Claude (Roast Generation)',
+                {
+                    movieId: facts.id.toString(),
+                    movieTitle: facts.title,
+                    model: 'claude-sonnet-4-5-20250929',
+                    stage: 'roast',
+                },
+                undefined,
+                `${res.status} ${res.statusText}: ${errorText}`,
+                apiDuration
+            );
+            throw new Error(`Claude API failed: ${res.status} ${res.statusText}`);
+        }
+
+        const data = (await res.json()) as {
+            content: { text: string }[];
+            stop_reason: string;
+            usage?: {
+                cache_creation_input_tokens?: number;
+                cache_read_input_tokens?: number;
+                input_tokens?: number;
+                output_tokens?: number;
+            };
+        };
+
+        // Log successful API call
+        await logger.logExternalAPICall(
+            'Claude (Roast Generation)',
+            {
+                movieId: facts.id.toString(),
+                movieTitle: facts.title,
+                model: body.model,
+                temperature: body.temperature,
+                max_tokens: body.max_tokens,
+                stage: 'roast',
+                cache_stats: {
+                    cache_creation_input_tokens: data.usage?.cache_creation_input_tokens || 0,
+                    cache_read_input_tokens: data.usage?.cache_read_input_tokens || 0,
+                    input_tokens: data.usage?.input_tokens || 0,
+                    output_tokens: data.usage?.output_tokens || 0,
+                },
+            },
+            {
+                response_length: data.content[0].text.length,
+                stop_reason: data.stop_reason,
+            },
+            undefined,
+            apiDuration
+        );
+
+        // Extract JSON from Claude's response
+        const responseText = data.content[0].text;
+
+        // Claude might wrap JSON in markdown code blocks
+        const jsonMatch =
+            responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/```\s*([\s\S]*?)\s*```/);
+
+        const jsonString = jsonMatch ? jsonMatch[1] : responseText;
+
+        return JSON.parse(jsonString.trim());
+    } catch (error) {
+        const apiDuration = Date.now() - apiStartTime;
+
+        await logger.logExternalAPICall(
+            'Claude (Roast Generation)',
+            {
+                movieId: facts.id.toString(),
+                movieTitle: facts.title,
+                model: 'claude-sonnet-4-5-20250929',
+                stage: 'roast',
+            },
+            undefined,
+            error instanceof Error ? error.message : String(error),
+            apiDuration
+        );
+
+        throw error;
+    }
 }
-
-// export async function searchMovieDetails(title: string, releaseYear: string, env: Env) {
-// 	const logger = new Logger(env, '/api/grok/search', 'POST');
-// 	const body = {
-// 		model: 'grok-2-1212',
-// 		temperature: 0.7,
-// 		max_tokens: 1000,
-// 		messages: [
-// 			{
-// 				role: 'system',
-// 				content:
-// 					'You are a movie information assistant. Provide detailed, accurate information about movies including box office performance, critical reception, trivia, and cultural impact. Use web search to find the latest information.',
-// 			},
-// 			{
-// 				role: 'user',
-// 				content: `Find detailed information about the movie "${title}" (${releaseYear}). Include box office performance, critical reception, awards, interesting trivia, and cultural impact.`,
-// 			},
-// 		],
-// 		tools: [
-// 			{
-// 				type: 'web_search',
-// 			},
-// 		],
-// 	};
-
-// 	const apiStartTime = Date.now();
-// 	const res = await fetch('https://api.x.ai/v1/chat/completions', {
-// 		method: 'POST',
-// 		headers: {
-// 			Authorization: `Bearer ${env.XAI_API_KEY}`,
-// 			'Content-Type': 'application/json',
-// 		},
-// 		body: JSON.stringify(body),
-// 	});
-
-// 	const apiDuration = Date.now() - apiStartTime;
-
-// 	if (!res.ok) {
-// 		const errorText = await res.text();
-// 		await logger.logExternalAPICall(
-// 			'Grok (Movie Search)',
-// 			{ movie: title, year: releaseYear, model: 'grok-2-1212' },
-// 			undefined,
-// 			`${res.status} ${res.statusText}: ${errorText}`,
-// 			apiDuration
-// 		);
-// 		throw new Error(`Grok API failed: ${res.status} ${res.statusText}`);
-// 	}
-
-// 	const data = (await res.json()) as GrokResponse;
-
-// 	// Log successful API call
-// 	await logger.logExternalAPICall(
-// 		'Grok (Movie Search)',
-// 		{
-// 			movie: title,
-// 			year: releaseYear,
-// 			model: body.model,
-// 			with_web_search: true,
-// 		},
-// 		{
-// 			response_length: data.choices[0].message.content.length,
-// 		},
-// 		undefined,
-// 		apiDuration
-// 	);
-
-// 	return data.choices[0].message.content;
-// }

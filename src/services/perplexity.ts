@@ -3,7 +3,12 @@ import { fetchMovieCredits } from './tmdb';
 import { getTruthKey, USD_TO_INR } from '../constants';
 import { Logger } from '../utils/logger';
 
-export async function getOrCreateMovieTruth(tmdbId: string, movieMeta: MovieMeta, env: Env, correlationId: string): Promise<MovieTruth> {
+export async function getOrCreateMovieTruth(
+	tmdbId: string,
+	movieMeta: MovieMeta,
+	env: Env,
+	correlationId: string
+): Promise<MovieTruth> {
 	const key = getTruthKey(env, tmdbId);
 	const logger = new Logger(env, '/api/perplexity', 'POST', correlationId);
 
@@ -15,40 +20,81 @@ export async function getOrCreateMovieTruth(tmdbId: string, movieMeta: MovieMeta
 
 	// Step 2: Fetch credits to get director name
 	const credits = await fetchMovieCredits(tmdbId, env, correlationId);
-	const directors = credits.crew.filter((member) => member.job === 'Director').map((d) => d.name);
+	const directors = credits.crew
+		.filter((member) => member.job === 'Director')
+		.map((d) => d.name);
 	const directorText = directors.length > 0 ? `, directed by ${directors.join(' & ')}` : '';
 
-	// Get language name from spoken_languages by matching original_language code
-	const languageInfo = movieMeta.spoken_languages.find((lang) => lang.iso_639_1 === movieMeta.original_language);
+	// Step 3: Get language name from spoken_languages
+	const languageInfo = movieMeta.spoken_languages.find(
+		(lang) => lang.iso_639_1 === movieMeta.original_language
+	);
 	const languageName = languageInfo?.english_name || movieMeta.original_language.toUpperCase();
 
-	// Step 3: Call Perplexity Sonar API for movie research
-	const userPrompt = `Find a story and reception breakdown for: ${movieMeta.title} (${movieMeta.release_date.split('-')[0]})${movieMeta.genres.length > 0 ? `, a ${movieMeta.genres.map((g) => g.name).join('/')} film` : ''}${directorText}, originally in ${languageName}.`;
+	// Get primary genre
+	const primaryGenre = movieMeta.genres.length > 0 ? movieMeta.genres[0].name : 'film';
+
+	// Step 4: Build Perplexity truth prompt
+	const userPrompt = `Analyze: ${movieMeta.title} (${movieMeta.release_date.split('-')[0]}), ${languageName} ${primaryGenre}${directorText}
+
+Find and report:
+
+1. PREMISE (2-3 sentences, no spoilers)
+What happens in the movie? Just the basic setup.
+
+2. WHAT IT PROMISES
+Based on the title, genre, and marketing - what kind of movie does this obviously claim to be?
+
+3. HOW PEOPLE ARE REACTING
+Find actual critic/audience reactions from ANY source (professional reviews, blogs, YouTube, regional sites, forums):
+- Critics demanding "depth" from silly movies?
+- People dismissing it unfairly?
+- Any groups fighting about it?
+
+Quote 3-5 actual review snippets with sources (even if it's a blog or regional newspaper).
+
+4. THE GAP
+One sentence: What IS this movie vs what are people demanding it be?
+
+5. AUDIENCE RECEPTION (Watch or Skip?)
+Check ANY available sources:
+- Big sites: RT, IMDB, Letterboxd if they exist
+- Regional: Local review sites, newspapers, film blogs
+- Social: YouTube reviews, comments, Twitter/X reactions
+- Box office: Regional collections if reported
+
+Score 1-10:
+1-2 = Avoid (universally panned)
+3-4 = Skip It (mostly negative)
+5 = Mixed Bag (divisive)
+6-7 = Worth Watching (decent)
+8 = Strong Approval (well-received)
+9-10 = Universal Acclaim (everyone loves it)
+
+Give:
+- Score: [number]
+- Label: [from scale above]
+- Why: One sentence explaining score based on sources you found
+- Sources: List WHATEVER you found (RT %, IMDB rating, regional review consensus, YouTube review sentiment, box office performance, etc.)`;
 
 	const body = {
 		model: 'sonar',
 		messages: [
 			{
 				role: 'system',
-				content: `You are a movie researcher. For the given film, gather accurate, well-structured information from reliable web sources and present it clearly.
+				content: `You extract movie facts for PlotBurn, a satire site that roasts how people react to movies.
 
-Provide:
+For reception: Use WHATEVER sources exist:
+- International: RT, IMDB, Letterboxd, Metacritic
+- Regional: Local review sites, newspapers, film blogs, entertainment portals
+- Social: YouTube reviews, Twitter/X sentiment, Reddit threads
+- Commercial: Box office reports (local or international)
 
-1) Plot: 200–250 words summarizing the beginning, middle, and end.
-2) Main Characters: Bullet list with a one-line description of each character's role and arc.
-3) Key Conflicts: Bullet list describing the main conflicts and how they are resolved.
-4) Themes & Tone: Bullet list covering major themes, genre, and emotional tone.
-5) Notable Story Elements:
-   - Important coincidences or plot conveniences
-   - Common tropes or clichés used
-   - Moments often described as melodramatic, over-the-top, or unintentionally funny by viewers or critics
-6) Audience & Critic Pulse:
-   - Overall reception (positive / mixed / negative)
-   - 3–5 commonly mentioned strengths
-   - 3–5 commonly mentioned weaknesses
-   - Any widely discussed scenes, performances, memes, or controversies
+Don't say "insufficient data" just because RT/IMDB don't exist. Regional movies have regional sources.
 
-All information must be factual and grounded in real web sources. Do not invent details or exaggerate.`,
+For reactions: Quote from ANY credible source - big critics, regional reviewers, bloggers, YouTube channels.
+
+Report only what you actually find. Don't invent. Translate to English. No spoilers.`,
 			},
 			{
 				role: 'user',
@@ -56,7 +102,7 @@ All information must be factual and grounded in real web sources. Do not invent 
 			},
 		],
 		temperature: 0.3,
-		max_tokens: 3000,
+		max_tokens: 2000,
 		search_recency_filter: 'month',
 	};
 
@@ -76,11 +122,11 @@ All information must be factual and grounded in real web sources. Do not invent 
 		const errorText = await res.text();
 		await logger.logExternalAPICall(
 			'Perplexity Sonar',
-			{ 
+			{
 				movieId: tmdbId,
 				movieTitle: movieMeta.title,
-				model: 'sonar', 
-				stage: 'truth' 
+				model: 'sonar',
+				stage: 'truth'
 			},
 			undefined,
 			`${res.status} ${res.statusText}: ${errorText}`,
@@ -109,9 +155,10 @@ All information must be factual and grounded in real web sources. Do not invent 
 		undefined,
 		apiDuration
 	);
+
 	const content = data.choices[0].message.content;
 
-	// Step 4: Store in TRUTH_KV
+	// Step 5: Build MovieTruth object
 	const truth: MovieTruth = {
 		source: 'perplexity:sonar',
 		fetchedAt: new Date().toISOString(),

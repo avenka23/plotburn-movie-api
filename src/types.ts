@@ -4,6 +4,7 @@ export interface Env {
 	TMDB_API_KEY: string;
 	XAI_API_KEY: string;
 	PERPLEXITY_API_KEY: string;
+	CLAUDE_API_KEY: string;
 	API_SECRET_KEY: string;
 	NOW_PLAYING_KV: KVNamespace;
 	ROAST_KV: KVNamespace;
