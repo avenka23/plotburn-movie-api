@@ -16,7 +16,7 @@ export const getDebugPrefix = (env: Env) => `debug:${env.KV_VERSION}:movie:`;
 export const NOW_PLAYING_TTL = 23 * 60 * 60; // 23 hours
 export const TOP_N = 5;
 export const MIN_VOTES = 50;
-export const ROAST_TTL = 60 * 60 * 24 * 30; // 30 days
+export const ROAST_TTL = 60 * 60 * 24 * 180; // 180 days
 export const DEBUG_TTL = 60 * 60 * 24 * 30; // 30 days (1 month)
 export const USD_TO_INR = 85;
 
