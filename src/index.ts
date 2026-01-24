@@ -3,7 +3,7 @@ import { json } from './utils/response';
 import { Logger } from './utils/logger';
 import { validateApiKey, isPublicEndpoint } from './utils/auth';
 import { handleNowPlaying } from './handlers/nowPlaying';
-import { handleMovieRoast } from './handlers/movieRoast';
+import { handleMovieRoast, handleMovieTruth } from './handlers/movieRoast';
 import { handleClearNowPlayingCache, handleClearRoastCache, handleClearTruthCache, handleClearDebugCache, handleClearAllCache } from './handlers/cache';
 import { handleFeed } from './handlers/feed';
 import { handleGetLogs, handleClearLogs } from './handlers/logs';
@@ -79,10 +79,14 @@ export default {
 			} else {
 				const movieMatch = url.pathname.match(/^\/movie\/(\d+)$/);
 				const debugMatch = url.pathname.match(/^\/movie\/(\d+)\/debug$/);
+				const truthMatch = url.pathname.match(/^\/movie\/(\d+)\/truth$/);
 
 				if (debugMatch) {
 					movieId = debugMatch[1];
 					response = await handleGetDebug(movieId, env);
+				} else if (truthMatch) {
+					movieId = truthMatch[1];
+					response = await handleMovieTruth(movieId, env, correlationId);
 				} else if (movieMatch) {
 					movieId = movieMatch[1];
 					response = await handleMovieRoast(movieId, env, correlationId);

@@ -3,12 +3,13 @@
 export interface Env {
 	TMDB_API_KEY: string;
 	XAI_API_KEY: string;
-	PERPLEXITY_API_KEY: string;
+	BRAVE_API_KEY: string;
 	CLAUDE_API_KEY: string;
 	API_SECRET_KEY: string;
 	NOW_PLAYING_KV: KVNamespace;
 	ROAST_KV: KVNamespace;
 	TRUTH_KV: KVNamespace;
+	SEARCH_KV: KVNamespace;
 	LOG_KV: KVNamespace;
 	DEBUG_KV: KVNamespace;
 	CRON_KV: KVNamespace;
@@ -106,67 +107,16 @@ export type MovieTruth = {
 	model: string;
 	costEstimateINR: number;
 	citations: string[];
-	searchResults: {
-		title: string;
-		url: string;
-		date: string;
-		snippet: string;
-	}[];
 	content: string;
-	raw: string;
 	usage: {
 		prompt_tokens: number;
 		completion_tokens: number;
-		total_tokens: number;
-		search_context_size: string;
-		cost: {
-			input_tokens_cost: number;
-			output_tokens_cost: number;
-			request_cost: number;
-			total_cost: number;
-		};
+		total_tokens?: number;
+		tool_calls?: number;
+		total_cost: number;
 	};
 };
 
-export type PerplexityResponse = {
-	id: string;
-	model: string;
-	created: number;
-	usage: {
-		prompt_tokens: number;
-		completion_tokens: number;
-		total_tokens: number;
-		search_context_size: string;
-		cost: {
-			input_tokens_cost: number;
-			output_tokens_cost: number;
-			request_cost: number;
-			total_cost: number;
-		};
-	};
-	citations: string[];
-	search_results: {
-		title: string;
-		url: string;
-		date: string;
-		last_updated: string;
-		snippet: string;
-		source: string;
-	}[];
-	object: string;
-	choices: {
-		index: number;
-		message: {
-			role: string;
-			content: string;
-		};
-		delta: {
-			role: string;
-			content: string;
-		};
-		finish_reason: string;
-	}[];
-};
 
 // ---------------- MOVIE METADATA ----------------
 
@@ -280,4 +230,223 @@ export interface CronResult {
 export interface CronHistory {
 	runs: CronResult[];
 	last_updated: string;
+}
+
+// ---------------- BRAVE SEARCH TYPES ----------------
+
+export interface BraveSearchResponse {
+	query: BraveQueryInfo;
+	faq?: BraveFaqSection;
+	mixed: BraveMixedResults;
+	type: "search";
+	web: BraveWebResults;
+	infobox?: BraveInfoBox;
+}
+
+export interface BraveQueryInfo {
+	original: string;
+	show_strict_warning: boolean;
+	cleaned: string;
+	is_navigational: boolean;
+	is_news_breaking: boolean;
+	spellcheck_off: boolean;
+	country: string;
+	bad_results: boolean;
+	should_fallback: boolean;
+	postal_code: string;
+	city: string;
+	header_country: string;
+	more_results_available: boolean;
+	state: string;
+	search_operators?: {
+		applied: boolean;
+		cleaned_query: string;
+	};
+}
+
+export interface BraveFaqSection {
+	type: "faq";
+	results: BraveFaqItem[];
+}
+
+export interface BraveFaqItem {
+	question: string;
+	answer: string;
+	title: string;
+	url: string;
+	meta_url: BraveMetaUrl;
+}
+
+export interface BraveMixedResults {
+	type: "mixed";
+	main: BraveMixedItem[];
+	top: BraveMixedItem[];
+	side: BraveMixedItem[];
+}
+
+export interface BraveMixedItem {
+	type: "web" | "faq" | "news" | "videos" | "infobox";
+	index?: number;
+	all: boolean;
+}
+
+export interface BraveWebResults {
+	type: "search";
+	results: BraveSearchResult[];
+	family_friendly: boolean;
+}
+
+export interface BraveSearchResult {
+	title: string;
+	url: string;
+	is_source_local: boolean;
+	is_source_both: boolean;
+	description: string;
+	page_age?: string;
+	profile: BraveProfile;
+	language: string;
+	family_friendly: boolean;
+	type: "search_result";
+	subtype: "generic" | "movie" | "article" | "event" | "faq";
+	is_live?: boolean;
+	meta_url: BraveMetaUrl;
+	thumbnail?: BraveThumbnail;
+	age?: string;
+	video?: BraveVideoData;
+	movie?: BraveMovieSearchData;
+	article?: BraveArticleData;
+	faq?: BraveFaqData;
+	review?: BraveReviewData;
+	organization?: BraveOrganizationData;
+	extra_snippets?: string[];
+}
+
+export interface BraveProfile {
+	name: string;
+	url: string;
+	long_name: string;
+	img: string;
+}
+
+export interface BraveMetaUrl {
+	scheme: string;
+	netloc: string;
+	hostname: string;
+	favicon: string;
+	path: string;
+}
+
+export interface BraveThumbnail {
+	src: string;
+	original: string;
+	logo: boolean;
+}
+
+export interface BraveVideoData {
+	duration: string;
+	thumbnail: BraveThumbnail;
+}
+
+export interface BraveMovieSearchData {
+	name: string;
+	description: string;
+	url: string;
+	thumbnail: BraveThumbnail;
+	release: string;
+	directors: BravePerson[];
+	actors: BravePerson[];
+	rating?: BraveRating;
+	duration?: string;
+	genre: string[];
+}
+
+export interface BravePerson {
+	type: "person";
+	name: string;
+	url?: string;
+	thumbnail?: BraveThumbnail;
+}
+
+export interface BraveRating {
+	ratingValue: number;
+	bestRating: number;
+	reviewCount?: number;
+	is_tripadvisor: boolean;
+}
+
+export interface BraveArticleData {
+	author: BravePerson[];
+	date: string;
+	publisher: BravePublisher;
+}
+
+export interface BravePublisher {
+	type: "organization";
+	name: string;
+	url?: string;
+	thumbnail?: BraveThumbnail;
+}
+
+export interface BraveFaqData {
+	items: BraveFaqItem[];
+}
+
+export interface BraveReviewData {
+	type: "Review";
+	name: string;
+	thumbnail: BraveThumbnail;
+	description: string;
+	rating: BraveRating;
+}
+
+export interface BraveOrganizationData {
+	type: "organization";
+	name: string;
+	contact_points: unknown[];
+}
+
+export interface BraveInfoBox {
+	type: "infobox";
+	position: number;
+	label: string;
+	category: string;
+	long_desc: string;
+	thumbnail: BraveThumbnail;
+	attributes: Array<{
+		label: string;
+		value: string;
+	}>;
+	profiles: Array<{
+		name: string;
+		url: string;
+		long_name: string;
+		img: string;
+	}>;
+	website: {
+		name: string;
+		url: string;
+	};
+	ratings: Array<{
+		name: string;
+		score: number;
+		scale: number;
+	}>;
+	providers: Array<{
+		name: string;
+		url: string;
+	}>;
+}
+
+export interface ExtractedMovieData {
+	results: Array<{
+		title: string;
+		description: string;
+		extra_snippets?: string[];
+		rating?: BraveRating;
+	}>;
+	faq: Array<{
+		question: string;
+		answer: string;
+	}>;
+	infobox?: BraveInfoBox;
 }

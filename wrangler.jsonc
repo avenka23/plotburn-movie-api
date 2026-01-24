@@ -24,6 +24,10 @@
 			"id": "f41eb5355845400da6aef37c8f01e72a"
 		},
 		{
+			"binding": "SEARCH_KV",
+			"id": "c06f2e1f7f15457a8330a6383e72577c"
+		},
+		{
 			"binding": "LOG_KV",
 			"id": "f0970fbdb76845748d946f51c52874ac"
 		},

@@ -4,8 +4,10 @@ import type { Env } from './types';
 export const getNowPlayingKey = (env: Env) => `now-playing:${env.KV_VERSION}`;
 export const getRoastKey = (env: Env, tmdbId: string) => `roast:${env.KV_VERSION}:movie:${tmdbId}`;
 export const getTruthKey = (env: Env, tmdbId: string) => `truth:${env.KV_VERSION}:movie:${tmdbId}`;
+export const getSearchKey = (env: Env, tmdbId: string) => `search:${env.KV_VERSION}:movie:${tmdbId}`;
 export const getRoastPrefix = (env: Env) => `roast:${env.KV_VERSION}:movie:`;
 export const getTruthPrefix = (env: Env) => `truth:${env.KV_VERSION}:movie:`;
+export const getSearchPrefix = (env: Env) => `search:${env.KV_VERSION}:movie:`;
 
 // Debug payload key - searchable by movieId
 export const getDebugKey = (env: Env, tmdbId: string, correlationId: string) =>
@@ -17,6 +19,8 @@ export const NOW_PLAYING_TTL = 23 * 60 * 60; // 23 hours
 export const TOP_N = 5;
 export const MIN_VOTES = 50;
 export const ROAST_TTL = 60 * 60 * 24 * 180; // 180 days
+export const SEARCH_TTL = 60 * 60 * 24 * 14; // 14 days
+export const TRUTH_TTL = 60 * 60 * 24 * 14; // 14 days
 export const DEBUG_TTL = 60 * 60 * 24 * 30; // 30 days (1 month)
 export const USD_TO_INR = 85;
 
