@@ -8,45 +8,49 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2025-12-31",
 	"observability": {
-		"enabled": true
+		"enabled": true,
 	},
 	"kv_namespaces": [
 		{
 			"binding": "NOW_PLAYING_KV",
-			"id": "c986950acbd440b8a320a97752dcb5c7"
+			"id": "c986950acbd440b8a320a97752dcb5c7",
 		},
 		{
 			"binding": "ROAST_KV",
-			"id": "a3789c64906e493ead19402a608e4ee3"
+			"id": "a3789c64906e493ead19402a608e4ee3",
 		},
 		{
 			"binding": "TRUTH_KV",
-			"id": "f41eb5355845400da6aef37c8f01e72a"
+			"id": "f41eb5355845400da6aef37c8f01e72a",
 		},
 		{
 			"binding": "SEARCH_KV",
-			"id": "c06f2e1f7f15457a8330a6383e72577c"
+			"id": "c06f2e1f7f15457a8330a6383e72577c",
 		},
 		{
 			"binding": "LOG_KV",
-			"id": "f0970fbdb76845748d946f51c52874ac"
+			"id": "f0970fbdb76845748d946f51c52874ac",
 		},
 		{
 			"binding": "DEBUG_KV",
-			"id": "45da5d5eea4d43d7842c911e446642f1"
+			"id": "45da5d5eea4d43d7842c911e446642f1",
 		},
 		{
 			"binding": "CRON_KV",
-			"id": "7662908b6425467ea96b7c5492c3ce0f"
-		}
+			"id": "7662908b6425467ea96b7c5492c3ce0f",
+		},
+		{
+			"binding": "RECENT_ROAST_KV",
+			"id": "7b4ccacdc7a843a68927c761e2e78100",
+		},
 	],
 	"vars": {
 		"KV_VERSION": "v1",
-		"LOG_RETENTION_DAYS": 7
+		"LOG_RETENTION_DAYS": 7,
 	},
 	"triggers": {
-		"crons": ["30 16 * * *"]
-	}
+		"crons": ["30 16 * * *"],
+	},
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

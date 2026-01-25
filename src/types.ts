@@ -7,6 +7,7 @@ export interface Env {
 	CLAUDE_API_KEY: string;
 	API_SECRET_KEY: string;
 	NOW_PLAYING_KV: KVNamespace;
+	RECENT_ROAST_KV: KVNamespace;
 	ROAST_KV: KVNamespace;
 	TRUTH_KV: KVNamespace;
 	SEARCH_KV: KVNamespace;

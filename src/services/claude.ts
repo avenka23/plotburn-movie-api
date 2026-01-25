@@ -5,11 +5,47 @@
  * humorous, satirical "roasts" of movies. It uses Claude's language capabilities
  * to create entertaining content that mocks movies in a fun, non-toxic way.
  *
- * The service implements prompt caching for cost optimization on repeated calls.
+ * The service implements prompt caching for cost optimization on repeated calls
+ * and tracks recent roasts to avoid repetitive patterns.
  */
 
 import type { Env, MovieMeta, MovieTruth } from '../types';
 import { Logger } from '../utils/logger';
+
+/**
+ * Retrieves recent roasts from KV storage to provide context for avoiding repetition
+ */
+async function getRecentRoasts(env: Env, limit: number = 5): Promise<string[]> {
+    try {
+        const stored = await env.RECENT_ROAST_KV.get('recent_roasts', 'json');
+        if (!stored || !Array.isArray(stored)) {
+            return [];
+        }
+        return stored.slice(-limit);
+    } catch (error) {
+        console.error('Failed to retrieve recent roasts:', error);
+        return [];
+    }
+}
+
+/**
+ * Stores a new roast in KV storage for future reference
+ */
+async function storeRoast(env: Env, roast: string): Promise<void> {
+    try {
+        const existing = await env.RECENT_ROAST_KV.get('recent_roasts', 'json') || [];
+        const updated = Array.isArray(existing) ? [...existing, roast] : [roast];
+        
+        // Keep only last 10 roasts to manage storage
+        const trimmed = updated.slice(-10);
+        
+        await env.RECENT_ROAST_KV.put('recent_roasts', JSON.stringify(trimmed), {
+            expirationTtl: 60 * 60 * 24 * 7 // Keep for 1 week
+        });
+    } catch (error) {
+        console.error('Failed to store roast:', error);
+    }
+}
 
 /**
  * Generates a satirical roast for a given movie using Claude API
@@ -32,6 +68,9 @@ export async function generateRoast(
 ) {
     // Initialize logger for tracking API calls and debugging
     const logger = new Logger(env, '/api/claude/roast', 'POST', correlationId);
+
+    // Retrieve recent roasts to avoid repetition
+    const recentRoasts = await getRecentRoasts(env);
 
     // Construct the request body for Claude API
     // Using the Messages API format with system prompts and user messages
@@ -58,35 +97,34 @@ Celebrate the sheer audacity of human imagination. Don't be mean; be entertained
 2. THE FANS: Mock our willingness to believe anything.
    - "We all agreed to pretend that cars can fly because it looked cool. We are a simple species."
 3. THE CRITICS: Mock them for being buzzkills at a party.
-   - "Critics are trying to find the logic. My friend, the logic left the building ten minutes ago. Just enjoy the fireworks."
+   - "Critics are trying to find the logic. The logic left the building ten minutes ago. Just enjoy the fireworks."
 
-TONE RULES:
-- FUN & PUNCHY: High energy. Short sentences. Use exclamations!
-- NON-TOXIC: We aren't angry; we are having a blast.
-- NO MONEY TALK: Focus on the wild story decisions, not the box office.
-- NO REAL NAMES: Use archetypes ("The director," "The lead," "The writers").
+WRITING STYLE:
+- Write like you're texting a friend about a wild movie you just saw
+- Use simple, everyday words anyone would understand
+- Avoid film critic vocabulary, industry jargon, and fancy academic words
+- Test: "Would I say this in a text message?" If no, simplify it.
+- No money talk. No real names. Just focus on the wild story decisions.
+- Avoid repetitive phrases like "my friend", "my brother", "but hey, at least the X slaps"
+- Vary your opening style each time
+- Don't fall into the formula: "Fans are [positive]... Critics are [negative]..."
 
 REGIONAL RULES:
 - If the movie is from a specific region (e.g., India, Korea), you MUST suggest similar movies from that region in the "similar_movies" list.
 - Mix Global hits and Local hits.
 
-Reference rules:
-- Use general global references
+SIMILAR MOVIE FORMAT:
+- Be specific: mention actual plot elements, not vague descriptions
+- GOOD: "horror-comedy with possessed cop fighting cybercriminals"
+- BAD: "horror-comedy blending scares with laughs in stretched runtime"
 
 You will receive raw research data about a movie. Parse it to understand:
 1. PREMISE - What the movie is about
 2. WHAT IT PROMISES - The obvious contract based on title/genre/marketing
 3. HOW PEOPLE ARE REACTING - Critic/audience reactions and quotes
 4. THE GAP - The disconnect between what it is vs what people expect
-5. AUDIENCE RECEPTION - Score (1-10), label, reasoning, and sources
-
-SIMILAR MOVIE RULES:
-- Generate 4 movies with similar plots, themes, or vibes
-- MIX IT UP: If the input movie is Regional (e.g. Indian, Korean), you MUST include 2 Global hits and 2 Local/Regional hits.
-- Format: "Movie Title (Year) - similarity explanation"`,
-                // Enable prompt caching for this system prompt block
-                // 'ephemeral' caching reduces costs on repeated API calls
-                cache_control: { type: 'ephemeral' },
+5. AUDIENCE RECEPTION - Score (1-10), label, reasoning, and sources`,
+        cache_control: { type: 'ephemeral' },
             },
             {
                 type: 'text',
@@ -96,15 +134,15 @@ SIMILAR MOVIE RULES:
 
 ACTION - Fast & Furious 9
 
-The writers decided to send a Pontiac Fiero into outer space, and I honestly respect the audacity. They looked at gravity and said, "absolutely not." It is the most expensive cartoon ever made. The audience loved it, of course. We happily turned off our brains to watch Vin Diesel catch a car with his bare hands. Meanwhile, the critics are confused. They are writing reviews about "plot holes." My guy, you are watching a movie where a car swings like Tarzan. The plot isn't a hole; it's a crater. And it's beautiful.
+The writers decided to send a Pontiac Fiero into outer space, and I honestly respect the audacity. They looked at gravity and said, "absolutely not." It is the most expensive cartoon ever made. The audience loved it, of course. We happily turned off our brains to watch Vin Diesel catch a car with his bare hands. The critics are confused. They are writing reviews about "plot holes." You are watching a movie where a car swings like Tarzan. The plot isn't a hole; it's a crater. And it's beautiful.
 
 ROMANCE - After Series
 
-A teenager wrote this on their phone during a math class, and Hollywood turned it into a blockbuster. That is an amazing fact. The filmmakers took a messy, toxic text thread and treated it like Romeo and Juliet. The fans are eating it up, ignoring every red flag because the lead actor is brooding and the music is sad. Critics are stressing out about the "bad message." But you can't lecture this movie! It's purely powered by hormones and vibes. Trying to find a moral lesson here is like trying to find a salad at a candy store.
+A teenager wrote this on their phone during a math class, and Hollywood turned it into a blockbuster. That is an amazing fact. The filmmakers took a messy, toxic text thread and treated it like Romeo and Juliet. Fans are eating it up, ignoring every red flag because the lead actor is moody and the music is sad. You can't lecture this movie! It's purely powered by hormones and vibes. Trying to find a moral lesson here is like trying to find a salad at a candy store.
 
 REGIONAL (TAMIL) - Vaa Vaathiyaar
 
-The pitch for this movie must have been legendary. "Okay, so the cop is possessed by a dead superstar, and he fights hackers with the power of nostalgia." And everyone just said yes! It is a glorious fever dream. The story runs entirely on vibes and hero worship. Critics are struggling to find the logic, but that's on them. Brother, a ghost is piloting a human body to beat up cyber-criminals. If you are looking for realism, you walked into the wrong party. Just sit back and enjoy the chaos.`,
+This movie's concept is legendary. A cop is possessed by a dead superstar, and he fights hackers with the power of nostalgia. Everyone just agreed to make it! It is a wild fever dream. The story runs entirely on vibes and hero worship. A ghost is piloting a human body to beat up cyber-criminals. If you are looking for realism, you walked into the wrong party. Just sit back and enjoy the chaos.`,
                 cache_control: { type: 'ephemeral' },
             },
         ],
@@ -115,13 +153,24 @@ The pitch for this movie must have been legendary. "Okay, so the cop is possesse
                 role: 'user',
                 // User prompt: Contains the actual movie data and output format specification
                 // Template literals inject movie metadata and research content
-                content: `Generate a PlotBurn roast for this movie.
+                content: `${recentRoasts.length > 0 ? `
+<recent_roasts>
+Here are the last ${recentRoasts.length} roasts generated to help you avoid repetitive patterns:
+
+${recentRoasts.join('\n\n---\n\n')}
+</recent_roasts>
+
+IMPORTANT: Make sure your new roast has a DIFFERENT opening style, structure, and closing than the examples above. Vary your vocabulary and avoid repeating phrases.
+
+` : ''}Generate a PlotBurn roast for this movie.
 
 **Movie:** ${facts.title} (${facts.release_date.split('-')[0]})
 **Language:** ${facts.spoken_languages.find((l) => l.iso_639_1 === facts.original_language)?.english_name || facts.original_language}
 **Genre:** ${facts.genres.length > 0 ? facts.genres.map((g) => g.name).join(', ') : 'film'}
 
-**Plot Summary:**
+**Research Data:**
+Plot summary, critical reception, and audience reactions:
+
 ${truth.content}
 
 ---
@@ -141,6 +190,7 @@ ${truth.content}
    - Use GLOBALLY RECOGNIZABLE references only for comparisons
    - Focus on the wild decisions of Makers, Fans, and Critics
    - DO NOT mention money or profits. Focus on the psychology.
+   - AVOID repetitive phrases and patterns from recent roasts
 
 4. **reception** (JSON object)
    - Extract the score and label from the research data
@@ -154,9 +204,11 @@ ${truth.content}
    - Format: ["Two Words", "Two Words", "Two Words"]
 
 6. **similar_movies** (array of EXACTLY 4 items)
-   - Generate 4 movies with similar plots, themes, or vibes
-   - REMEMBER: Mix Global and Regional if applicable
-   - Format: ["Movie (Year) - similarity", ...]
+   - Describe what actually HAPPENS in the plot, not vague qualities
+   - Answer: "What's that movie about?" not "What type of movie is it?"
+   - BAD: "horror-comedy mixing scares with romance"
+   - GOOD: "ghost woman kidnaps men, hero stops her"
+   - Format: "Movie Title (Year) - plot premise in 8-12 words"
 
 7. **shareable_caption** (8-12 words + #PlotBurn)
    - One-liner mocking the audience disconnect
@@ -266,8 +318,13 @@ ${truth.content}
         // Use extracted JSON or fall back to raw response text
         const jsonString = jsonMatch ? jsonMatch[1] : responseText;
 
-        // Parse and return the JSON response
-        return JSON.parse(jsonString.trim());
+        // Parse the JSON response
+        const parsedRoast = JSON.parse(jsonString.trim());
+
+        // Store the roast text for future repetition avoidance
+        await storeRoast(env, parsedRoast.roast);
+
+        return parsedRoast;
     } catch (error) {
         // Handle any errors during the API call or response processing
         const apiDuration = Date.now() - apiStartTime;
