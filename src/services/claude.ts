@@ -168,6 +168,8 @@ IMPORTANT: Make sure your new roast has a DIFFERENT opening style, structure, an
 **Language:** ${facts.spoken_languages.find((l) => l.iso_639_1 === facts.original_language)?.english_name || facts.original_language}
 **Genre:** ${facts.genres.length > 0 ? facts.genres.map((g) => g.name).join(', ') : 'film'}
 
+**Note:** This movie was released on ${facts.release_date}. If you have training knowledge about it (released before January 2025), leverage that to enrich your roast with specific plot details, memorable scenes, or filmmaking choices. Otherwise, rely solely on the research data below.
+
 **Research Data:**
 Plot summary, critical reception, and audience reactions:
 

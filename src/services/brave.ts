@@ -256,7 +256,7 @@ export async function fetchBraveSearch(
   // Prepare search query
   const lang = getLanguageName(movieMeta.original_language);
   const releaseYear = movieMeta.release_date?.split('-')[0] || new Date().getFullYear().toString();
-  const searchQuery = `${movieMeta.title} ${releaseYear} ${lang} movie plot summary review rating audience verdict`;
+  const searchQuery = `${movieMeta.title} ${releaseYear} ${lang} movie story summary review rating audience verdict`;
 
   const apiStartTime = Date.now();
 
