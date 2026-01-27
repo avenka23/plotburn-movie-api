@@ -1,16 +1,14 @@
 import type {
   Env,
-  MovieTruth,
   MovieMeta,
   BraveSearchResponse,
   ExtractedMovieData,
 } from '../types';
-import { getTruthKey, getSearchKey, SEARCH_TTL, TRUTH_TTL } from '../constants';
-import { Logger } from '../utils/logger';
 import { getLanguageName } from "../utils/iso639";
+import { Logger } from '../utils/logger';
 
-// Stored search result type
-interface StoredSearchResult {
+// Stored search result type - exported for use in handlers
+export interface StoredSearchResult {
   source: 'brave-search-api';
   fetchedAt: string;
   query: string;
@@ -18,8 +16,8 @@ interface StoredSearchResult {
   citations: string[];
 }
 
-// Grok extraction response type
-interface GrokExtractionResponse {
+// Grok extraction response type - exported for use in handlers
+export interface GrokExtractionResponse {
   title: string;
   plot: {
     summary: string;
@@ -246,22 +244,15 @@ CRITICAL RULES:
 Return only valid JSON without markdown.`;
 
 /**
- * Fetches search results from Brave and stores in SEARCH_KV
+ * Fetches search results from Brave Search API
+ * Exported for use in handlers that need to fetch evidence separately
  */
-async function fetchBraveSearch(
+export async function fetchBraveSearch(
   tmdbId: string,
   movieMeta: MovieMeta,
   env: Env,
   logger: Logger
 ): Promise<{ searchResult: StoredSearchResult; fromCache: boolean }> {
-  const searchKey = getSearchKey(env, tmdbId);
-
-  // Check SEARCH_KV cache
-  const cachedSearch = await env.SEARCH_KV.get(searchKey, { type: 'json' });
-  if (cachedSearch) {
-    return { searchResult: cachedSearch as StoredSearchResult, fromCache: true };
-  }
-
   // Prepare search query
   const lang = getLanguageName(movieMeta.original_language);
   const releaseYear = movieMeta.release_date?.split('-')[0] || new Date().getFullYear().toString();
@@ -333,7 +324,7 @@ async function fetchBraveSearch(
     infobox: data.infobox,
   };
 
-  // Build stored search result
+  // Build search result
   const searchResult: StoredSearchResult = {
     source: 'brave-search-api',
     fetchedAt: new Date().toISOString(),
@@ -341,11 +332,6 @@ async function fetchBraveSearch(
     data: extractedData,
     citations: data.web?.results?.map((r) => r.url) || [],
   };
-
-  // Store in SEARCH_KV
-  await env.SEARCH_KV.put(searchKey, JSON.stringify(searchResult), {
-    expirationTtl: SEARCH_TTL,
-  });
 
   // Log the API call
   await logger.logExternalAPICall(
@@ -366,8 +352,9 @@ async function fetchBraveSearch(
 
 /**
  * Calls Grok API to extract structured movie data from search results
+ * Exported for use in handlers that need to extract content separately
  */
-async function extractWithGrok(
+export async function extractWithGrok(
   searchResult: StoredSearchResult,
   movieMeta: MovieMeta,
   env: Env,
@@ -456,8 +443,32 @@ async function extractWithGrok(
     const responseText = data.choices[0]?.message?.content || '{}';
 
     // Handle potential markdown code blocks
+    let jsonString = responseText;
     const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/```\s*([\s\S]*?)\s*```/);
-    const jsonString = jsonMatch ? jsonMatch[1] : responseText;
+    if (jsonMatch) {
+      jsonString = jsonMatch[1];
+    } else {
+      // No code blocks - extract JSON object by finding matching braces
+      // This handles cases where Grok adds trailing text after the JSON
+      const firstBrace = responseText.indexOf('{');
+      if (firstBrace !== -1) {
+        let braceCount = 0;
+        let lastBrace = -1;
+        for (let i = firstBrace; i < responseText.length; i++) {
+          if (responseText[i] === '{') braceCount++;
+          else if (responseText[i] === '}') {
+            braceCount--;
+            if (braceCount === 0) {
+              lastBrace = i;
+              break;
+            }
+          }
+        }
+        if (lastBrace !== -1) {
+          jsonString = responseText.substring(firstBrace, lastBrace + 1);
+        }
+      }
+    }
 
     const extraction = JSON.parse(jsonString.trim()) as GrokExtractionResponse;
 
@@ -489,65 +500,3 @@ async function extractWithGrok(
   }
 }
 
-/**
- * Main function: Gets or creates movie truth
- * 1. Check TRUTH_KV cache
- * 2. Fetch/get Brave Search results (stored in SEARCH_KV)
- * 3. Call Grok to extract structured data
- * 4. Store extraction in TRUTH_KV
- */
-export async function getOrCreateMovieTruth(
-  tmdbId: string,
-  movieMeta: MovieMeta,
-  env: Env,
-  correlationId: string
-): Promise<MovieTruth> {
-  const truthKey = getTruthKey(env, tmdbId);
-  const logger = new Logger(env, '/api/movie-truth', 'GET', correlationId);
-
-  // 1. Check TRUTH_KV cache
-  const cachedTruth = await env.TRUTH_KV.get(truthKey, { type: 'json' });
-  if (cachedTruth) {
-    return cachedTruth as MovieTruth;
-  }
-
-  // 2. Fetch Brave Search results (stores in SEARCH_KV)
-  const { searchResult } = await fetchBraveSearch(
-    tmdbId,
-    movieMeta,
-    env,
-    logger
-  );
-
-  // 3. Extract with Grok
-  const { extraction, usage } = await extractWithGrok(
-    searchResult,
-    movieMeta,
-    env,
-    logger
-  );
-
-  // 4. Build MovieTruth object
-  const truth: MovieTruth = {
-    source: 'grok-extraction',
-    fetchedAt: new Date().toISOString(),
-    model: 'grok-4-1-fast-non-reasoning',
-    costEstimateINR: 0, // Calculate based on usage if needed
-    citations: searchResult.citations,
-    content: JSON.stringify(extraction, null, 2),
-    usage: {
-      prompt_tokens: usage.prompt_tokens,
-      completion_tokens: usage.completion_tokens,
-      total_tokens: usage.total_tokens,
-      tool_calls: 0,
-      total_cost: 0,
-    },
-  };
-
-  // 5. Store in TRUTH_KV
-  await env.TRUTH_KV.put(truthKey, JSON.stringify(truth), {
-    expirationTtl: TRUTH_TTL,
-  });
-
-  return truth;
-}

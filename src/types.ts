@@ -6,14 +6,9 @@ export interface Env {
 	BRAVE_API_KEY: string;
 	CLAUDE_API_KEY: string;
 	API_SECRET_KEY: string;
-	NOW_PLAYING_KV: KVNamespace;
+	R2: R2Bucket;
+	plotburn_db: D1Database;
 	RECENT_ROAST_KV: KVNamespace;
-	ROAST_KV: KVNamespace;
-	TRUTH_KV: KVNamespace;
-	SEARCH_KV: KVNamespace;
-	LOG_KV: KVNamespace;
-	DEBUG_KV: KVNamespace;
-	CRON_KV: KVNamespace;
 	KV_VERSION: string;
 	LOG_RETENTION_DAYS: number;
 }
@@ -98,6 +93,36 @@ export type TMDBCreditsResponse = {
 		job: string;
 		department: string;
 	}[];
+};
+
+export type TMDBWatchProvider = {
+	logo_path: string;
+	provider_id: number;
+	provider_name: string;
+	display_priority: number;
+};
+
+export type TMDBWatchProvidersResponse = {
+	id: number;
+	results: {
+		[countryCode: string]: {
+			link: string;
+			flatrate?: TMDBWatchProvider[];
+			rent?: TMDBWatchProvider[];
+			buy?: TMDBWatchProvider[];
+		};
+	};
+};
+
+export type StreamingProviderDB = {
+	tmdb_movie_id: number;
+	region: string;
+	provider_id: number;
+	provider_name: string;
+	logo_path: string;
+	type: string;
+	link: string;
+	last_updated: number;
 };
 
 // ---------------- MOVIE TRUTH STORAGE ----------------
@@ -195,11 +220,15 @@ export interface NowPlayingResponse {
 
 export interface MovieRoast {
 	headline: string;
-	content: string;
+	overview: string;
+	roast: string;
+	reception: {
+		bars: number;
+		label: string;
+	};
 	chips: string[];
-	internet_vibe: string[];
-	your_opinion: string;
 	similar_movies: string[];
+	shareable_caption: string;
 }
 
 export interface MovieRoastResponse {

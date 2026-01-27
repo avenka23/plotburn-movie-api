@@ -1,9 +1,10 @@
-import type { Env, CronResult, CronHistory, NowPlayingResponse, MovieRoastResponse } from '../types';
+import type { Env, CronResult, NowPlayingResponse, MovieRoastResponse, NowPlayingMovie } from '../types';
 import { handleNowPlaying } from './nowPlaying';
+import { handlePopularMovies } from './popular';
 import { handleMovieRoast } from './movieRoast';
 import { json } from '../utils/response';
 import { Logger } from '../utils/logger';
-import { getCronLastRunKey, getCronHistoryKey, CRON_HISTORY_LIMIT, CRON_DELAY_MS } from '../constants';
+import { CRON_DELAY_MS } from '../constants';
 
 /**
  * Main cron job logic - fetches now-playing movies and generates roasts for each
@@ -14,28 +15,43 @@ import { getCronLastRunKey, getCronHistoryKey, CRON_HISTORY_LIMIT, CRON_DELAY_MS
 export async function runDailyRoastGeneration(env: Env, correlationId: string): Promise<CronResult> {
 	const startTime = Date.now();
 	const logger = new Logger(env, '/cron/run', 'SCHEDULED', correlationId);
+	let finalStatus = 200;
 
 	await logger.logRequest({ trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual' });
 
-	// Store "in-progress" status immediately
-	const inProgressResult: Partial<CronResult> = {
-		timestamp: new Date().toISOString(),
-		trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual',
-		correlation_id: correlationId,
-		status: 'in_progress' as any,
-	};
-	await env.CRON_KV.put(getCronLastRunKey(env), JSON.stringify(inProgressResult));
-
 	try {
-		// Step 1: Fetch now-playing movies (uses existing cache if available)
+		// Step 1: Fetch now-playing movies
 		console.log(`[${correlationId}] Fetching now-playing movies...`);
 		const nowPlayingResponse = await handleNowPlaying(env);
 		const nowPlayingData = (await nowPlayingResponse.json()) as NowPlayingResponse;
-		const movies = nowPlayingData.movies;
+		const nowPlayingMovies = nowPlayingData.movies;
+		console.log(`[${correlationId}] Found ${nowPlayingMovies.length} now-playing movies`);
 
-		console.log(`[${correlationId}] Found ${movies.length} now-playing movies`);
+		// Step 2: Fetch popular movies
+		console.log(`[${correlationId}] Fetching popular movies...`);
+		const popularResponse = await handlePopularMovies(env);
+		const popularData = (await popularResponse.json()) as NowPlayingResponse;
+		const popularMovies = popularData.movies;
+		console.log(`[${correlationId}] Found ${popularMovies.length} popular movies`);
 
-		// Step 2: Process each movie sequentially with rate limiting
+		// Step 3: Merge and deduplicate (popular movies take precedence for duplicates)
+		const movieMap = new Map<number, NowPlayingMovie>();
+
+		// Add now-playing first
+		for (const movie of nowPlayingMovies) {
+			movieMap.set(movie.id, movie);
+		}
+
+		// Add popular movies (overwrites duplicates - popular score takes precedence)
+		for (const movie of popularMovies) {
+			movieMap.set(movie.id, movie);
+		}
+
+		const movies = Array.from(movieMap.values());
+		const duplicateCount = nowPlayingMovies.length + popularMovies.length - movies.length;
+		console.log(`[${correlationId}] Merged: ${movies.length} unique movies (${duplicateCount} duplicates removed)`);
+
+		// Step 4: Process each movie sequentially with rate limiting
 		const results = {
 			processed: 0,
 			cached: 0,
@@ -81,7 +97,7 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 			}
 		}
 
-		// Step 3: Create result summary
+		// Step 5: Create result summary
 		const cronResult: CronResult = {
 			timestamp: new Date().toISOString(),
 			trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual',
@@ -98,51 +114,21 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 
 		console.log(`[${correlationId}] Cron job completed:`, cronResult);
 
-		// Step 4: Store last run result in CRON_KV
-		await env.CRON_KV.put(getCronLastRunKey(env), JSON.stringify(cronResult));
-
-		// Step 5: Update history (keep last 10 runs) in CRON_KV
-		const historyKey = getCronHistoryKey(env);
-		const historyData = await env.CRON_KV.get(historyKey);
-		const history: CronHistory = historyData
-			? JSON.parse(historyData)
-			: { runs: [], last_updated: new Date().toISOString() };
-
-		history.runs.unshift(cronResult); // Add to beginning
-		history.runs = history.runs.slice(0, CRON_HISTORY_LIMIT); // Keep only last 10
-		history.last_updated = new Date().toISOString();
-
-		await env.CRON_KV.put(historyKey, JSON.stringify(history));
-
 		// Step 6: Log completion
 		await logger.logResponse(200, cronResult);
 
 		return cronResult;
 	} catch (error) {
+		finalStatus = 500;
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.error(`[${correlationId}] Cron job failed:`, error);
 
 		await logger.logResponse(500, { error: errorMessage });
 
-		// Create failed result
-		const failedResult: CronResult = {
-			timestamp: new Date().toISOString(),
-			trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual',
-			correlation_id: correlationId,
-			movies_fetched: 0,
-			roasts_processed: 0,
-			roasts_cached: 0,
-			roasts_generated: 0,
-			roasts_failed: 0,
-			failed_movie_ids: [],
-			duration_ms: Date.now() - startTime,
-			status: 'failed',
-		};
-
-		// Store failed result in CRON_KV
-		await env.CRON_KV.put(getCronLastRunKey(env), JSON.stringify(failedResult));
-
 		throw error;
+	} finally {
+		// Always flush logs to R2
+		await logger.flush(finalStatus);
 	}
 }
 
@@ -191,29 +177,14 @@ export async function handleCronTrigger(env: Env, ctx?: ExecutionContext): Promi
 }
 
 /**
- * Status endpoint - returns last run and history
+ * Status endpoint - returns note about KV removal
  * GET /cron/status
  */
 export async function handleCronStatus(env: Env): Promise<Response> {
-	try {
-		// Get last run from CRON_KV
-		const lastRunData = await env.CRON_KV.get(getCronLastRunKey(env));
-		const lastRun = lastRunData ? JSON.parse(lastRunData) : null;
-
-		// Get history from CRON_KV
-		const historyData = await env.CRON_KV.get(getCronHistoryKey(env));
-		const history = historyData ? JSON.parse(historyData) : { runs: [], last_updated: null };
-
-		return json(
-			{
-				last_run: lastRun,
-				history: history.runs,
-				total_runs: history.runs.length,
-			},
-			200
-		);
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		return json({ error: 'Failed to fetch cron status', message: errorMessage }, 500);
-	}
+	return json(
+		{
+			message: "Cron status history is no longer stored in KV. Check server logs."
+		},
+		200
+	);
 }

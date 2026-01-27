@@ -1,26 +1,25 @@
 import type { Env, NowPlayingMovie, TMDBNowPlayingMovie } from '../types';
-import { fetchNowPlaying } from '../services/tmdb';
+import { fetchPopularMovies } from '../services/tmdb';
 import { upsertMovie, addMovieToCategory, clearCategory } from '../services/database';
 import { json } from '../utils/response';
 
-export async function handleNowPlaying(env: Env): Promise<Response> {
-	console.log('[NOW_PLAYING] Fetching from TMDB...');
+export async function handlePopularMovies(env: Env): Promise<Response> {
+	console.log('[POPULAR] Fetching from TMDB...');
 
-	// Fetch from TMDB
-	const data = await fetchNowPlaying(env);
+	// Fetch from TMDB (always fresh - popularity scores change frequently)
+	const data = await fetchPopularMovies(env);
 
-	// Save movies to D1 (source of truth) - WITHOUT updating popularity
-	console.log(`[NOW_PLAYING] Saving ${data.results.length} movies to D1...`);
+	// Save movies to D1 (source of truth) with updated popularity scores
+	console.log(`[POPULAR] Saving ${data.results.length} movies to D1...`);
 
-	// Clear existing now_playing category before refreshing
-	await clearCategory(env, 'now_playing');
+	// Clear existing popular category before refreshing
+	await clearCategory(env, 'popular');
 
 	let savedCount = 0;
 	let failedCount = 0;
 
 	for (const movie of data.results) {
 		try {
-			// Convert TMDBNowPlayingMovie to TMDBMovieDetails format for upsert
 			const movieDetails = {
 				id: movie.id,
 				title: movie.title,
@@ -31,7 +30,7 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 				vote_count: movie.vote_count,
 				poster_path: movie.poster_path,
 				overview: movie.overview,
-				// Default values for fields not in now-playing response
+				// Default values for fields not in popular response
 				adult: false,
 				backdrop_path: null,
 				belongs_to_collection: null,
@@ -51,19 +50,19 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 				video: false,
 			};
 
-			// Pass skipPopularity=true to avoid overwriting popularity if it differs
-			await upsertMovie(env, movieDetails, 'en', true);
-			// Add to 'now_playing' category
-			await addMovieToCategory(env, movie.id, 'now_playing');
+			// skipPopularity=false to always update popularity scores
+			await upsertMovie(env, movieDetails, 'en', false);
+			// Add to 'popular' category
+			await addMovieToCategory(env, movie.id, 'popular');
 			savedCount++;
 		} catch (error) {
 			failedCount++;
-			console.error(`[NOW_PLAYING] Failed to save movie ${movie.id} (${movie.title}):`, error);
-			// Continue with other movies even if one fails
+			console.error(`[POPULAR] Failed to save movie ${movie.id} (${movie.title}):`, error);
+			// Continue with other movies
 		}
 	}
 
-	console.log(`[NOW_PLAYING] D1 save complete: ${savedCount} saved, ${failedCount} failed`);
+	console.log(`[POPULAR] D1 save complete: ${savedCount} saved, ${failedCount} failed`);
 
 	// Transform to response format
 	const movies: NowPlayingMovie[] = data.results.map((movie: TMDBNowPlayingMovie) => ({
@@ -75,7 +74,7 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 		popularity: movie.popularity,
 		overview: movie.overview,
 		poster_url: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
-		has_roast: false, // Will be updated when roasts are generated
+		has_roast: false,
 	}));
 
 	return json({
@@ -83,7 +82,6 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 		page: data.page,
 		total_pages: data.total_pages,
 		total_results: data.total_results,
-		dates: data.dates,
 		movies,
 	});
 }

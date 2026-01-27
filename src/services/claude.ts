@@ -312,11 +312,34 @@ ${truth.content}
 
         // Claude sometimes wraps JSON in markdown code blocks (```json ... ```)
         // This regex handles both ```json and plain ``` blocks
+        let jsonString = responseText;
         const jsonMatch =
             responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/```\s*([\s\S]*?)\s*```/);
 
-        // Use extracted JSON or fall back to raw response text
-        const jsonString = jsonMatch ? jsonMatch[1] : responseText;
+        if (jsonMatch) {
+            jsonString = jsonMatch[1];
+        } else {
+            // No code blocks - extract JSON object by finding matching braces
+            // This handles cases where Claude adds trailing text after the JSON
+            const firstBrace = responseText.indexOf('{');
+            if (firstBrace !== -1) {
+                let braceCount = 0;
+                let lastBrace = -1;
+                for (let i = firstBrace; i < responseText.length; i++) {
+                    if (responseText[i] === '{') braceCount++;
+                    else if (responseText[i] === '}') {
+                        braceCount--;
+                        if (braceCount === 0) {
+                            lastBrace = i;
+                            break;
+                        }
+                    }
+                }
+                if (lastBrace !== -1) {
+                    jsonString = responseText.substring(firstBrace, lastBrace + 1);
+                }
+            }
+        }
 
         // Parse the JSON response
         const parsedRoast = JSON.parse(jsonString.trim());

@@ -10,73 +10,32 @@
 	"observability": {
 		"enabled": true,
 	},
-	"kv_namespaces": [
-		{
-			"binding": "NOW_PLAYING_KV",
-			"id": "c986950acbd440b8a320a97752dcb5c7",
-		},
-		{
-			"binding": "ROAST_KV",
-			"id": "a3789c64906e493ead19402a608e4ee3",
-		},
-		{
-			"binding": "TRUTH_KV",
-			"id": "f41eb5355845400da6aef37c8f01e72a",
-		},
-		{
-			"binding": "SEARCH_KV",
-			"id": "c06f2e1f7f15457a8330a6383e72577c",
-		},
-		{
-			"binding": "LOG_KV",
-			"id": "f0970fbdb76845748d946f51c52874ac",
-		},
-		{
-			"binding": "DEBUG_KV",
-			"id": "45da5d5eea4d43d7842c911e446642f1",
-		},
-		{
-			"binding": "CRON_KV",
-			"id": "7662908b6425467ea96b7c5492c3ce0f",
-		},
-		{
-			"binding": "RECENT_ROAST_KV",
-			"id": "7b4ccacdc7a843a68927c761e2e78100",
-		},
-	],
 	"vars": {
 		"KV_VERSION": "v1",
 		"LOG_RETENTION_DAYS": 7,
 	},
 	"triggers": {
-		"crons": ["30 16 * * *"],
+		"crons": [
+			"30 16 * * *"
+		],
 	},
-	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": {  "directory": "./public/",  "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+	"d1_databases": [
+		{
+			"binding": "plotburn_db",
+			"database_name": "plotburn-db",
+			"database_id": "2000dfe6-c130-4ef1-82b1-177d88e6435e"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "R2",
+			"bucket_name": "plotburn-r2"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "RECENT_ROAST_KV",
+			"id": "7b4ccacdc7a843a68927c761e2e78100"
+		}
+	]
 }

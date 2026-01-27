@@ -2,16 +2,15 @@
 
 ## Overview
 
-Comprehensive logging system for the PlotBurn Movie API that tracks all requests, responses, and external API calls with automatic cleanup.
+Comprehensive logging system for the PlotBurn Movie API that tracks all requests, responses, and external API calls with automatic R2 storage.
 
 ## Features
 
-- ✅ **Request/Response Logging**: Every API endpoint logs full request and response details
-- ✅ **External API Logging**: All calls to TMDB, Perplexity, and Grok are logged with timing and costs
-- ✅ **Sensitive Data Redaction**: Automatically redacts API keys, tokens, and authorization headers
-- ✅ **Auto-Cleanup**: Logs expire automatically after 7 days (configurable)
-- ✅ **Multiple Storage**: Logs to both Cloudflare KV (persistent) and console (dashboard)
-- ✅ **Queryable**: Retrieve logs via API with filtering options
+- Request/Response Logging: Every API endpoint logs full request and response details
+- External API Logging: All calls to TMDB, Brave Search, and Claude are logged with timing and costs
+- Sensitive Data Redaction: Automatically redacts API keys, tokens, and authorization headers
+- R2 Storage: Logs stored in Cloudflare R2 for persistence
+- Console Output: Real-time logging via Cloudflare Dashboard
 
 ## Configuration
 
@@ -20,68 +19,17 @@ Comprehensive logging system for the PlotBurn Movie API that tracks all requests
 ```json
 {
   "vars": {
-    "KV_VERSION": "v1",
-    "LOG_RETENTION_DAYS": 7  // Auto-delete logs after 7 days
+    "KV_VERSION": "v1"
   }
 }
 ```
 
-### KV Namespace
+### R2 Bucket
 
 ```json
 {
-  "binding": "LOG_KV",
-  "id": "f0970fbdb76845748d946f51c52874ac"
-}
-```
-
-## API Endpoints
-
-### Get Logs
-
-```
-GET /logs?limit=100&level=ERROR
-```
-
-**Query Parameters:**
-- `limit` (optional): Number of logs to retrieve (1-1000, default: 100)
-- `level` (optional): Filter by log level (INFO, WARN, ERROR, DEBUG)
-
-**Response:**
-```json
-{
-  "total": 50,
-  "logs": [
-    {
-      "timestamp": "2026-01-16T14:30:00.000Z",
-      "level": "INFO",
-      "endpoint": "/movie/123",
-      "method": "GET",
-      "responseStatus": 200,
-      "duration": 1234,
-      "metadata": { ... }
-    }
-  ],
-  "note": "Logs auto-expire after 7 days"
-}
-```
-
-### Clear Old Logs
-
-```
-DELETE /logs?olderThanDays=30
-```
-
-**Query Parameters:**
-- `olderThanDays` (optional): Delete logs older than this many days (default: 30)
-
-**Response:**
-```json
-{
-  "success": true,
-  "deleted_count": 150,
-  "message": "Cleared 150 logs older than 30 days",
-  "note": "Logs are also auto-cleared after 7 days via TTL"
+  "binding": "R2",
+  "bucket_name": "plotburn-r2"
 }
 ```
 
@@ -91,17 +39,17 @@ DELETE /logs?olderThanDays=30
 
 ```typescript
 {
-  timestamp: "2026-01-16T14:30:00.000Z",
-  level: "INFO",           // INFO, WARN, ERROR, DEBUG
+  timestamp: "2026-01-27T14:30:00.000Z",
+  level: "INFO",
   endpoint: "/movie/123",
   method: "GET",
-  requestBody: {...},      // Sensitive data redacted
+  requestBody: {...},
   responseStatus: 200,
-  responseBody: "...",     // Limited to 1000 chars
-  duration: 1234,          // milliseconds
+  responseBody: "...",
+  duration: 1234,
   metadata: {
     queryParams: {...},
-    headers: {...}         // Authorization redacted
+    headers: {...}  // Authorization redacted
   }
 }
 ```
@@ -110,23 +58,21 @@ DELETE /logs?olderThanDays=30
 
 ```typescript
 {
-  timestamp: "2026-01-16T14:30:00.000Z",
+  timestamp: "2026-01-27T14:30:00.000Z",
   level: "DEBUG",
-  endpoint: "/api/perplexity",
+  endpoint: "/api/brave",
   method: "EXTERNAL_API",
   requestBody: {
     movie: "Inception",
-    model: "sonar"
+    query: "Inception 2010 movie reviews"
   },
   responseBody: {
-    tokens: 2500,
-    cost_usd: 0.05,
-    cost_inr: 4.25,
-    citations_count: 8
+    results_count: 10,
+    cost_usd: 0.005
   },
-  duration: 2340,
+  duration: 1200,
   metadata: {
-    apiName: "Perplexity Sonar"
+    apiName: "Brave Search"
   }
 }
 ```
@@ -145,24 +91,23 @@ DELETE /logs?olderThanDays=30
 
 #### TMDB API
 - Movie ID being fetched
-- Request type (now_playing, movie details)
+- Request type (now_playing, popular, movie details)
 - Response duration
 - Success/failure status
 
-#### Perplexity Sonar API
+#### Brave Search API
 - Movie title and year
-- Model used (sonar)
-- Token usage
-- Cost in USD and INR
-- Number of citations
+- Search query
+- Results count
+- Cost estimates
 - Request duration
 - Error details (if failed)
 
-#### Grok/xAI API
-- Movie title and year
-- Model used (grok-4-1-fast-reasoning)
-- Request parameters (temperature, max_tokens, etc.)
-- Response structure
+#### Claude API
+- Movie title
+- Model used (claude-sonnet-4-20250514)
+- Token usage (input/output/total)
+- Cost in USD and INR
 - Request duration
 - Error details (if failed)
 
@@ -195,27 +140,14 @@ The following data is automatically redacted from logs:
 
 ## Viewing Logs
 
-### 1. Via API
-
-```bash
-# Get last 100 logs
-curl https://your-worker.workers.dev/logs
-
-# Get only ERROR logs
-curl https://your-worker.workers.dev/logs?level=ERROR&limit=50
-
-# Get specific number of logs
-curl https://your-worker.workers.dev/logs?limit=200
-```
-
-### 2. Via Cloudflare Dashboard
+### 1. Via Cloudflare Dashboard
 
 1. Go to Workers & Pages
 2. Select your worker (plotburn-movie-api)
 3. Click on "Logs" tab
 4. View real-time console logs
 
-### 3. Via Wrangler CLI
+### 2. Via Wrangler CLI
 
 ```bash
 # Tail logs in real-time
@@ -225,19 +157,14 @@ npx wrangler tail
 npx wrangler tail --status error
 ```
 
-## Log Retention & Cleanup
+### 3. Via R2 Bucket
 
-### Automatic Cleanup (TTL)
-- Logs automatically expire after `LOG_RETENTION_DAYS` (default: 7 days)
-- Uses Cloudflare KV's built-in TTL feature
-- No manual intervention required
-- Zero storage cost after expiration
-
-### Manual Cleanup
-```bash
-# Delete logs older than 30 days
-curl -X DELETE https://your-worker.workers.dev/logs?olderThanDays=30
+Logs are stored in R2 with the path pattern:
 ```
+logs/{YYYY-MM-DD}/{correlationId}.json
+```
+
+Access via Cloudflare Dashboard > R2 > plotburn-r2
 
 ## Implementation Details
 
@@ -247,7 +174,7 @@ curl -X DELETE https://your-worker.workers.dev/logs?olderThanDays=30
 import { Logger } from './utils/logger';
 
 // In your handler
-const logger = new Logger(env, '/movie/123', 'GET');
+const logger = new Logger(env, '/movie/123', 'GET', correlationId);
 
 // Log request
 await logger.logRequest({ queryParams: {...} });
@@ -257,7 +184,7 @@ await logger.logResponse(200, responseBody);
 
 // Log external API call
 await logger.logExternalAPICall(
-  'Perplexity Sonar',
+  'Claude',
   { movie: 'Inception' },
   { tokens: 2500, cost_usd: 0.05 },
   undefined,  // error (if any)
@@ -266,62 +193,43 @@ await logger.logExternalAPICall(
 
 // Log errors
 await logger.logError(error);
+
+// Flush logs to R2 (call in finally block)
+await logger.flush(responseStatus);
 ```
 
 ### Integration Points
 
-1. **Main Router** ([src/index.ts](src/index.ts:17)): Logs all incoming requests and outgoing responses
-2. **Perplexity Service** ([src/services/perplexity.ts](src/services/perplexity.ts:7)): Logs API calls with costs
-3. **Grok Service** (needs integration): Log roast generation calls
-4. **TMDB Service** (needs integration): Log movie data fetches
+1. **Main Router** (src/index.ts): Logs all incoming requests and outgoing responses
+2. **Brave Service** (src/services/brave.ts): Logs search API calls with costs
+3. **Claude Service** (src/services/claude.ts): Logs roast generation calls with token usage
+4. **TMDB Service** (src/services/tmdb.ts): Logs movie data fetches
 
 ## Cost Considerations
 
-### Storage Costs
-- Cloudflare KV: Free up to 1GB
+### R2 Storage Costs
+- Cloudflare R2: Free up to 10GB storage
 - Each log entry: ~1-3 KB
-- At 7 days retention: ~5,000-10,000 requests = ~10-30 MB
-- Well within free tier for most applications
-
-### Read/Write Costs
-- KV writes: First 1,000/day free, then $0.50 per million
-- KV reads: First 100,000/day free, then $0.50 per million
-- Logging adds 2 writes per request (request + response)
+- Class A operations (writes): First 1,000,000/month free
+- Class B operations (reads): First 10,000,000/month free
 
 ## Troubleshooting
 
-### Logs not appearing in KV?
-- Check that `LOG_KV` namespace is properly bound in wrangler.jsonc
-- Verify `LOG_RETENTION_DAYS` is set in environment variables
-- Check Cloudflare dashboard for any KV write errors
-
-### Logs disappearing?
-- Logs expire after `LOG_RETENTION_DAYS` (default: 7 days)
-- This is intentional to manage storage costs
-- Increase retention period if needed
+### Logs not appearing in R2?
+- Check that `R2` bucket is properly bound in wrangler.jsonc
+- Verify the bucket exists in your Cloudflare account
+- Check Cloudflare dashboard for any R2 write errors
 
 ### Sensitive data in logs?
 - Logger automatically redacts: authorization, api_key, token, password, secret
 - Add more sensitive keywords in `redactSensitiveData` function if needed
-
-## Next Steps
-
-To complete the logging implementation:
-
-1. ✅ Logger utility created with redaction
-2. ✅ LOG_KV namespace created
-3. ✅ Main router integrated
-4. ✅ Perplexity service integrated
-5. ⏳ TODO: Add logging to Grok service
-6. ⏳ TODO: Add logging to TMDB service
-7. ⏳ TODO: Test full logging pipeline
 
 ## Example Log Output
 
 ```json
 [
   {
-    "timestamp": "2026-01-16T14:30:15.234Z",
+    "timestamp": "2026-01-27T14:30:15.234Z",
     "level": "INFO",
     "endpoint": "/movie/123",
     "method": "GET",
@@ -336,23 +244,24 @@ To complete the logging implementation:
     }
   },
   {
-    "timestamp": "2026-01-16T14:30:16.123Z",
+    "timestamp": "2026-01-27T14:30:16.123Z",
     "level": "DEBUG",
-    "endpoint": "/api/perplexity",
+    "endpoint": "/api/claude",
     "method": "EXTERNAL_API",
     "requestBody": {
       "movie": "Inception (2010)",
-      "model": "sonar"
+      "model": "claude-sonnet-4-20250514"
     },
     "responseBody": {
-      "tokens": 2500,
-      "cost_usd": 0.05,
-      "cost_inr": 4.25,
-      "citations_count": 8
+      "input_tokens": 1500,
+      "output_tokens": 800,
+      "total_tokens": 2300,
+      "cost_usd": 0.012,
+      "cost_inr": 1.02
     },
     "duration": 2340,
     "metadata": {
-      "apiName": "Perplexity Sonar"
+      "apiName": "Claude"
     }
   }
 ]

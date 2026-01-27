@@ -3,11 +3,8 @@ import { json } from './utils/response';
 import { Logger } from './utils/logger';
 import { validateApiKey, isPublicEndpoint } from './utils/auth';
 import { handleNowPlaying } from './handlers/nowPlaying';
+import { handlePopularMovies } from './handlers/popular';
 import { handleMovieRoast, handleMovieTruth } from './handlers/movieRoast';
-import { handleClearNowPlayingCache, handleClearRoastCache, handleClearTruthCache, handleClearDebugCache, handleClearAllCache } from './handlers/cache';
-import { handleFeed } from './handlers/feed';
-import { handleGetLogs, handleClearLogs } from './handlers/logs';
-import { handleGetDebug, handleGetDebugByCorrelation } from './handlers/debug';
 import { runDailyRoastGeneration, handleCronTrigger, handleCronStatus } from './handlers/cron';
 
 export type { Env };
@@ -22,13 +19,15 @@ export default {
 		const correlationId = req.headers.get('x-correlation-id') || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 		const logger = new Logger(env, url.pathname, req.method, correlationId);
 
+		let responseStatus = 200;
+
 		try {
 			// Check authentication for protected endpoints
 			if (!isPublicEndpoint(url.pathname)) {
 				const authError = validateApiKey(req, env);
 				if (authError) {
-					// Don't log 401 responses to avoid KV write delays
-					// await logger.logResponse(401, { error: 'Unauthorized' });
+					responseStatus = 401;
+					await logger.logResponse(401, { error: 'Unauthorized' });
 					return authError;
 				}
 			}
@@ -45,46 +44,17 @@ export default {
 
 			if (url.pathname === '/now-playing') {
 				response = await handleNowPlaying(env);
-			} else if (url.pathname === '/feed') {
-				response = await handleFeed(env, url.searchParams);
+			} else if (url.pathname === '/popular') {
+				response = await handlePopularMovies(env);
 			} else if (url.pathname === '/cron/trigger' && req.method === 'POST') {
 				response = await handleCronTrigger(env, ctx);
 			} else if (url.pathname === '/cron/status' && req.method === 'GET') {
 				response = await handleCronStatus(env);
-			} else if (url.pathname === '/logs' && req.method === 'GET') {
-				response = await handleGetLogs(env, url.searchParams);
-			} else if (url.pathname === '/logs' && req.method === 'DELETE') {
-				response = await handleClearLogs(env, url.searchParams);
-			} else if (url.pathname === '/debug' && req.method === 'GET') {
-				const correlationId = url.searchParams.get('correlationId');
-				if (correlationId) {
-					response = await handleGetDebugByCorrelation(correlationId, env);
-				} else {
-					response = json({ error: 'Missing correlationId query parameter' }, 400);
-				}
-			} else if (req.method === 'DELETE') {
-				if (url.pathname === '/cache/clear/now-playing') {
-					response = await handleClearNowPlayingCache(env);
-				} else if (url.pathname === '/cache/clear/roast') {
-					response = await handleClearRoastCache(env);
-				} else if (url.pathname === '/cache/clear/truth') {
-					response = await handleClearTruthCache(env);
-				} else if (url.pathname === '/cache/clear/debug') {
-					response = await handleClearDebugCache(env);
-				} else if (url.pathname === '/cache/clear/all') {
-					response = await handleClearAllCache(env);
-				} else {
-					response = json({ error: 'Not found' }, 404);
-				}
 			} else {
 				const movieMatch = url.pathname.match(/^\/movie\/(\d+)$/);
-				const debugMatch = url.pathname.match(/^\/movie\/(\d+)\/debug$/);
 				const truthMatch = url.pathname.match(/^\/movie\/(\d+)\/truth$/);
 
-				if (debugMatch) {
-					movieId = debugMatch[1];
-					response = await handleGetDebug(movieId, env);
-				} else if (truthMatch) {
+				if (truthMatch) {
 					movieId = truthMatch[1];
 					response = await handleMovieTruth(movieId, env, correlationId);
 				} else if (movieMatch) {
@@ -93,16 +63,9 @@ export default {
 				} else {
 					response = json({ error: 'Not found' }, 404);
 				}
-				// } else {
-				// 	const detailsMatch = url.pathname.match(/^\/movie\/(\d+)\/details$/);
-				// 	if (detailsMatch) {
-				// 		movieId = detailsMatch[1];
-				// 		response = await handleMovieDetailsWithSearch(movieId, env, correlationId);
-				// 	} else {
-				// 		response = json({ error: 'Not found' }, 404);
-				// 	}
-				// }
 			}
+
+			responseStatus = response.status;
 
 			// Log response with important metadata only
 			await logger.logResponse(response.status, {
@@ -112,6 +75,7 @@ export default {
 
 			return response;
 		} catch (error) {
+			responseStatus = 500;
 			// Log error
 			await logger.logError(error as Error);
 
@@ -122,19 +86,30 @@ export default {
 				},
 				500
 			);
+		} finally {
+			// Always flush logs to R2 at the end of the request
+			// This ensures all accumulated logs are persisted even if an error occurred
+			ctx.waitUntil(logger.flush(responseStatus));
 		}
 	},
 
 	async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
 		const correlationId = `cron-${Date.now()}`;
-		console.log(`[${correlationId}] Scheduled cron job triggered at ${new Date().toISOString()}`);
+		const logger = new Logger(env, '/cron/scheduled', 'SCHEDULED', correlationId);
+
+		let status = 200;
 
 		try {
+			await logger.logRequest({ trigger: 'scheduled', cron: event.cron });
 			await runDailyRoastGeneration(env, correlationId);
-			console.log(`[${correlationId}] Cron job completed successfully`);
+			await logger.logResponse(200, { status: 'completed' });
 		} catch (error) {
-			console.error(`[${correlationId}] Cron job failed:`, error);
+			status = 500;
+			await logger.logError(error as Error);
 			// Don't throw - allow worker to continue
+		} finally {
+			// Flush logs to R2
+			await logger.flush(status);
 		}
 	},
 };

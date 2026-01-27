@@ -16,6 +16,21 @@ export interface LogEntry {
 	metadata?: Record<string, any>;
 }
 
+export interface RequestLog {
+	correlationId: string;
+	startTime: string;
+	endTime?: string;
+	totalDuration?: number;
+	endpoint: string;
+	method: string;
+	finalStatus?: number;
+	entries: LogEntry[];
+}
+
+// Global buffer to store logs by correlationId
+// This allows multiple Logger instances with the same correlationId to share the same buffer
+const logBuffers = new Map<string, LogEntry[]>();
+
 // Helper function to redact sensitive data
 function redactSensitiveData(obj: any): any {
 	if (!obj || typeof obj !== 'object') return obj;
@@ -53,33 +68,100 @@ export class Logger {
 		this.endpoint = endpoint;
 		this.method = method;
 		this.correlationId = correlationId || generateCorrelationId();
+
+		// Initialize buffer for this correlationId if it doesn't exist
+		if (!logBuffers.has(this.correlationId)) {
+			logBuffers.set(this.correlationId, []);
+		}
 	}
 
-	private async writeLog(entry: LogEntry) {
-		// 1. Console log for Cloudflare dashboard
+	/**
+	 * Add entry to buffer and console log immediately
+	 * Console logs happen in real-time for Cloudflare dashboard visibility
+	 * R2 storage happens on flush() for efficiency and atomicity
+	 */
+	private addEntry(entry: LogEntry) {
+		// 1. Console log immediately for real-time visibility in Cloudflare dashboard
 		const durationStr = entry.duration !== undefined ? `${entry.duration}ms` : '-';
 		const movieInfo = entry.movieId ? `[Movie: ${entry.movieId}${entry.movieTitle ? ` - ${entry.movieTitle}` : ''}]` : '';
 		const logMessage = `[${entry.level}] [${entry.correlationId}] ${entry.method} ${entry.endpoint} ${movieInfo} - ${entry.responseStatus || 'N/A'} - ${durationStr}`;
 
 		if (entry.level === 'ERROR') {
-			console.error(logMessage, entry);
+			console.error(logMessage, entry.error || '', entry.metadata ? JSON.stringify(entry.metadata) : '');
 		} else if (entry.level === 'WARN') {
-			console.warn(logMessage, entry);
+			console.warn(logMessage, entry.metadata ? JSON.stringify(entry.metadata) : '');
 		} else {
-			console.log(logMessage, entry);
+			console.log(logMessage);
 		}
 
-		// 2. Store in LOG_KV with auto-expiry
-		if (this.env.LOG_KV) {
-			try {
-				const logKey = `log:${this.env.KV_VERSION}:${entry.correlationId}`;
-				await this.env.LOG_KV.put(logKey, JSON.stringify(entry), {
-					expirationTtl: this.env.LOG_RETENTION_DAYS ? this.env.LOG_RETENTION_DAYS * 24 * 60 * 60 : 7 * 24 * 60 * 60, // Default 7 days
-				});
-			} catch (err) {
-				console.error('Failed to write log to KV:', err);
-			}
+		// 2. Add to buffer for later R2 storage
+		const buffer = logBuffers.get(this.correlationId);
+		if (buffer) {
+			buffer.push(entry);
 		}
+	}
+
+	/**
+	 * Flush all buffered logs to R2 as a single file
+	 * Call this at the end of the request (in finally block) to ensure all logs are persisted
+	 * Even if an error occurs mid-request, calling flush() in finally will save all accumulated logs
+	 */
+	async flush(finalStatus?: number): Promise<void> {
+		const buffer = logBuffers.get(this.correlationId);
+		if (!buffer || buffer.length === 0) {
+			logBuffers.delete(this.correlationId);
+			return;
+		}
+
+		if (!this.env.R2) {
+			logBuffers.delete(this.correlationId);
+			return;
+		}
+
+		try {
+			const endTime = new Date().toISOString();
+			const totalDuration = Date.now() - this.startTime;
+
+			// Build the complete request log with all entries
+			const requestLog: RequestLog = {
+				correlationId: this.correlationId,
+				startTime: new Date(this.startTime).toISOString(),
+				endTime,
+				totalDuration,
+				endpoint: this.endpoint,
+				method: this.method,
+				finalStatus,
+				entries: buffer,
+			};
+
+			// Store as a single file in R2
+			const date = new Date().toISOString().split('T')[0];
+			const logKey = `logs/${date}/${this.correlationId}.json`;
+
+			await this.env.R2.put(logKey, JSON.stringify(requestLog, null, 2), {
+				customMetadata: {
+					correlationId: this.correlationId,
+					endpoint: this.endpoint,
+					method: this.method,
+					status: finalStatus?.toString() || 'unknown',
+					entryCount: buffer.length.toString(),
+				},
+			});
+
+			console.log(`[LOGGER] Flushed ${buffer.length} entries to R2: ${logKey}`);
+		} catch (err) {
+			console.error('[LOGGER] Failed to flush logs to R2:', err);
+		} finally {
+			// Always clean up the buffer to prevent memory leaks
+			logBuffers.delete(this.correlationId);
+		}
+	}
+
+	/**
+	 * Get current buffer size (useful for debugging)
+	 */
+	getBufferSize(): number {
+		return logBuffers.get(this.correlationId)?.length || 0;
 	}
 
 	async logRequest(metadata?: Record<string, any>) {
@@ -94,7 +176,7 @@ export class Logger {
 			metadata: redactSensitiveData(metadata),
 		};
 
-		await this.writeLog(entry);
+		this.addEntry(entry);
 	}
 
 	async logResponse(status: number, metadata?: Record<string, any>) {
@@ -109,10 +191,10 @@ export class Logger {
 			movieTitle: metadata?.movieTitle,
 			responseStatus: status,
 			duration,
-			metadata,
+			metadata: redactSensitiveData(metadata),
 		};
 
-		await this.writeLog(entry);
+		this.addEntry(entry);
 	}
 
 	async logError(error: Error | string, metadata?: Record<string, any>) {
@@ -127,10 +209,10 @@ export class Logger {
 			movieTitle: metadata?.movieTitle,
 			error: typeof error === 'string' ? error : error.message,
 			duration,
-			metadata,
+			metadata: redactSensitiveData(metadata),
 		};
 
-		await this.writeLog(entry);
+		this.addEntry(entry);
 	}
 
 	async logExternalAPICall(apiName: string, requestData: any, responseData?: any, error?: string, duration?: number) {
@@ -151,74 +233,44 @@ export class Logger {
 			},
 		};
 
-		await this.writeLog(entry);
+		this.addEntry(entry);
 	}
-}
 
-// Helper function to retrieve logs
-export async function getLogs(
-	env: Env,
-	options: {
-		limit?: number;
-		level?: LogLevel;
-		startDate?: string;
-		endDate?: string;
-	} = {}
-): Promise<LogEntry[]> {
-	const { limit = 100, level } = options;
+	/**
+	 * Log a debug message
+	 */
+	async logDebug(message: string, metadata?: Record<string, any>) {
+		const entry: LogEntry = {
+			timestamp: new Date().toISOString(),
+			level: 'DEBUG',
+			correlationId: this.correlationId,
+			endpoint: this.endpoint,
+			method: this.method,
+			metadata: {
+				message,
+				...redactSensitiveData(metadata),
+			},
+		};
 
-	try {
-		const listResult = await env.LOG_KV.list({
-			prefix: `log:${env.KV_VERSION}:`,
-			limit,
-		});
-
-		const logs: LogEntry[] = [];
-		for (const key of listResult.keys) {
-			const logData = await env.LOG_KV.get(key.name);
-			if (logData) {
-				const log = JSON.parse(logData) as LogEntry;
-				if (!level || log.level === level) {
-					logs.push(log);
-				}
-			}
-		}
-
-		// Sort by timestamp descending (newest first)
-		logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-		return logs;
-	} catch (err) {
-		console.error('Failed to retrieve logs:', err);
-		return [];
+		this.addEntry(entry);
 	}
-}
 
-// Helper function to clear old logs manually (though TTL handles this automatically)
-export async function clearOldLogs(env: Env, olderThanDays: number): Promise<number> {
-	try {
-		const cutoffDate = new Date();
-		cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+	/**
+	 * Log a warning message
+	 */
+	async logWarn(message: string, metadata?: Record<string, any>) {
+		const entry: LogEntry = {
+			timestamp: new Date().toISOString(),
+			level: 'WARN',
+			correlationId: this.correlationId,
+			endpoint: this.endpoint,
+			method: this.method,
+			metadata: {
+				message,
+				...redactSensitiveData(metadata),
+			},
+		};
 
-		const listResult = await env.LOG_KV.list({
-			prefix: `log:${env.KV_VERSION}:`,
-		});
-
-		let deletedCount = 0;
-		for (const key of listResult.keys) {
-			const logData = await env.LOG_KV.get(key.name);
-			if (logData) {
-				const log = JSON.parse(logData) as LogEntry;
-				if (new Date(log.timestamp) < cutoffDate) {
-					await env.LOG_KV.delete(key.name);
-					deletedCount++;
-				}
-			}
-		}
-
-		return deletedCount;
-	} catch (err) {
-		console.error('Failed to clear old logs:', err);
-		return 0;
+		this.addEntry(entry);
 	}
 }

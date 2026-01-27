@@ -1,4 +1,4 @@
-import type { Env, TMDBNowPlayingResponse, TMDBMovieDetails, TMDBCreditsResponse } from '../types';
+import type { Env, TMDBNowPlayingResponse, TMDBMovieDetails, TMDBCreditsResponse, TMDBWatchProvidersResponse } from '../types';
 import { Logger } from '../utils/logger';
 
 // TMDB Genre IDs to exclude (documentaries and music/concert films)
@@ -211,4 +211,91 @@ export async function fetchMovieCredits(tmdbId: string, env: Env, correlationId:
 	);
 
 	return data;
+}
+
+export async function fetchWatchProviders(tmdbId: string, env: Env, correlationId: string): Promise<TMDBWatchProvidersResponse> {
+	const logger = new Logger(env, '/api/tmdb/watch-providers', 'GET', correlationId);
+
+	const apiStartTime = Date.now();
+	const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/watch/providers?api_key=${env.TMDB_API_KEY}`);
+
+	const apiDuration = Date.now() - apiStartTime;
+
+	if (!res.ok) {
+		await logger.logExternalAPICall(
+			'TMDB (Watch Providers)',
+			{
+				movieId: tmdbId,
+				endpoint: 'watch/providers',
+				stage: 'tmdb',
+			},
+			undefined,
+			`${res.status} ${res.statusText}`,
+			apiDuration
+		);
+		// Return empty-ish response on failure to not break flow? Or throw?
+		// Throwing is better so we know it failed, but caller should handle.
+		throw new Error('TMDB watch providers fetch failed');
+	}
+
+	const data = (await res.json()) as TMDBWatchProvidersResponse;
+
+	await logger.logExternalAPICall(
+		'TMDB (Watch Providers)',
+		{
+			movieId: tmdbId,
+			endpoint: 'watch/providers',
+			stage: 'tmdb',
+		},
+		{
+			regions_count: Object.keys(data.results).length,
+			has_in: !!data.results['IN'],
+		},
+		undefined,
+		apiDuration
+	);
+
+	return data;
+}
+
+export async function fetchPopularMovies(env: Env): Promise<TMDBNowPlayingResponse> {
+	const logger = new Logger(env, '/api/tmdb/popular', 'GET');
+
+	const apiStartTime = Date.now();
+	const allResults: any[] = [];
+	
+	// Fetch 2 pages max (40 results)
+	for (let page = 1; page <= 2; page++) {
+		const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${env.TMDB_API_KEY}&page=${page}&region=IN`);
+		
+		if (!res.ok) {
+			console.warn(`[TMDB] Failed to fetch popular page ${page}, skipping`);
+			continue;
+		}
+
+		const data = (await res.json()) as TMDBNowPlayingResponse;
+		allResults.push(...data.results);
+		
+		if (data.total_pages <= page) break;
+	}
+
+	const apiDuration = Date.now() - apiStartTime;
+
+	// Log the bulk operation
+	await logger.logExternalAPICall(
+		'TMDB (Popular Movies)',
+		{ endpoint: 'popular', region: 'IN', pages: 2 },
+		{ count: allResults.length },
+		undefined,
+		apiDuration
+	);
+
+	// Normalize to TMDBNowPlayingResponse format for consistency
+	return {
+		page: 1,
+		results: allResults.slice(0, 40),
+		total_pages: 1,
+		total_results: allResults.length,
+		dates: { maximum: '', minimum: '' } // Not applicable for popular
+	};
 }
