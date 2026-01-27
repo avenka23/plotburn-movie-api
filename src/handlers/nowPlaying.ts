@@ -52,9 +52,21 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 			};
 
 			// Pass skipPopularity=true to avoid overwriting popularity if it differs
-			await upsertMovie(env, movieDetails, 'en', true);
+			try {
+				await upsertMovie(env, movieDetails, 'en', true);
+			} catch (upsertError) {
+				console.error(`[NOW_PLAYING] Failed to upsert movie ${movie.id} (${movie.title}):`, upsertError);
+				throw upsertError; // Re-throw to catch in outer block
+			}
+			
 			// Add to 'now_playing' category
-			await addMovieToCategory(env, movie.id, 'now_playing');
+			try {
+				await addMovieToCategory(env, movie.id, 'now_playing');
+			} catch (categoryError) {
+				console.error(`[NOW_PLAYING] Failed to add movie ${movie.id} (${movie.title}) to category:`, categoryError);
+				throw categoryError; // Re-throw to catch in outer block
+			}
+			
 			savedCount++;
 		} catch (error) {
 			failedCount++;

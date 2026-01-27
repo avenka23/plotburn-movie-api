@@ -85,23 +85,31 @@ export async function upsertMovie(env: Env, movie: TMDBMovieDetails, language: s
 export async function addMovieToCategory(env: Env, movieId: number, category: string): Promise<void> {
 	const now = Math.floor(Date.now() / 1000);
 
-	await env.plotburn_db
+	console.log(`[DB] Adding movie ${movieId} to category '${category}'`);
+	
+	const result = await env.plotburn_db
 		.prepare(
 			`INSERT OR IGNORE INTO movie_categories (movie_id, category, added_at)
        VALUES (?, ?, ?)`
 		)
 		.bind(movieId, category, now)
 		.run();
+	
+	console.log(`[DB] Inserted into movie_categories: success=${result.success}, changes=${result.meta.changes}, movieId=${movieId}, category=${category}`);
 }
 
 /**
  * Clear all movies from a category (used before refreshing category membership)
  */
 export async function clearCategory(env: Env, category: string): Promise<void> {
-	await env.plotburn_db
+	console.log(`[DB] Clearing category '${category}'...`);
+	
+	const result = await env.plotburn_db
 		.prepare(`DELETE FROM movie_categories WHERE category = ?`)
 		.bind(category)
 		.run();
+	
+	console.log(`[DB] Cleared category '${category}': success=${result.success}, changes=${result.meta.changes}`);
 }
 
 /**

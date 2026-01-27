@@ -51,9 +51,21 @@ export async function handlePopularMovies(env: Env): Promise<Response> {
 			};
 
 			// skipPopularity=false to always update popularity scores
-			await upsertMovie(env, movieDetails, 'en', false);
+			try {
+				await upsertMovie(env, movieDetails, 'en', false);
+			} catch (upsertError) {
+				console.error(`[POPULAR] Failed to upsert movie ${movie.id} (${movie.title}):`, upsertError);
+				throw upsertError; // Re-throw to catch in outer block
+			}
+			
 			// Add to 'popular' category
-			await addMovieToCategory(env, movie.id, 'popular');
+			try {
+				await addMovieToCategory(env, movie.id, 'popular');
+			} catch (categoryError) {
+				console.error(`[POPULAR] Failed to add movie ${movie.id} (${movie.title}) to category:`, categoryError);
+				throw categoryError; // Re-throw to catch in outer block
+			}
+			
 			savedCount++;
 		} catch (error) {
 			failedCount++;
