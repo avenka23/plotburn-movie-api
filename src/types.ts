@@ -254,12 +254,26 @@ export interface CronResult {
 	roasts_failed?: number;
 	failed_movie_ids?: number[];
 	duration_ms?: number;
-	status: 'in_progress' | 'success' | 'partial' | 'failed';
+	status: 'in_progress' | 'success' | 'partial' | 'failed' | 'skipped';
+	error?: string;
+}
+
+export interface CronHistoryEntry {
+	id: number;
+	job_name: string;
+	started_at: number;
+	finished_at: number | null;
+	duration_ms: number | null;
+	status: string;
+	movies_roasted_count: number;
+	movie_titles: string | null;
+	cursor: string | null;
+	error: string | null;
 }
 
 export interface CronHistory {
-	runs: CronResult[];
-	last_updated: string;
+	job: string;
+	runs: CronHistoryEntry[];
 }
 
 // ---------------- BRAVE SEARCH TYPES ----------------

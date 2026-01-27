@@ -1,25 +1,51 @@
-import type { Env, CronResult, NowPlayingResponse, MovieRoastResponse, NowPlayingMovie } from '../types';
+import type { Env, CronResult, NowPlayingResponse, MovieRoastResponse, NowPlayingMovie, CronHistoryEntry } from '../types';
 import { handleNowPlaying } from './nowPlaying';
 import { handlePopularMovies } from './popular';
 import { handleMovieRoast } from './movieRoast';
 import { json } from '../utils/response';
 import { Logger } from '../utils/logger';
 import { CRON_DELAY_MS } from '../constants';
+import { CronTracker } from '../services/cron';
 
 /**
  * Main cron job logic - fetches now-playing movies and generates roasts for each
  * @param env - Cloudflare environment bindings
- * @param correlationId - Unique ID for this cron run
+ * @param correlationId - Unique ID for this cron run (used for logging)
  * @returns CronResult with execution summary
  */
 export async function runDailyRoastGeneration(env: Env, correlationId: string): Promise<CronResult> {
 	const startTime = Date.now();
 	const logger = new Logger(env, '/cron/run', 'SCHEDULED', correlationId);
+	const tracker = new CronTracker(env, 'movie_roast');
+	let runId: number | null = null;
 	let finalStatus = 200;
 
 	await logger.logRequest({ trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual' });
 
 	try {
+		// 0. Acquire Lock & Start Run
+		try {
+			console.log(`[${correlationId}] Attempting to acquire cron lock...`);
+			runId = await tracker.startRun();
+			console.log(`[${correlationId}] Acquired lock for run #${runId}`);
+		} catch (e: any) {
+			if (e.message.includes('already running')) {
+				console.warn(`[${correlationId}] Skipping run: ${e.message}`);
+				// Log this as a special "skipped" event rather than a full error
+				await logger.logWarn('Cron execution skipped: Job already running');
+				// DO NOT set runId here - no lock was acquired, nothing to release
+				return {
+					timestamp: new Date().toISOString(),
+					trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual',
+					correlation_id: correlationId,
+					status: 'skipped',
+					duration_ms: Date.now() - startTime,
+					error: 'Job is already running'
+				};
+			}
+			throw e;
+		}
+
 		// Step 1: Fetch now-playing movies
 		console.log(`[${correlationId}] Fetching now-playing movies...`);
 		const nowPlayingResponse = await handleNowPlaying(env);
@@ -58,6 +84,7 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 			generated: 0,
 			failed: 0,
 			failedIds: [] as number[],
+			titles: [] as string[]
 		};
 
 		for (let i = 0; i < movies.length; i++) {
@@ -70,7 +97,14 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 				const roastResponse = await handleMovieRoast(movieId, env, correlationId);
 				const roastData = (await roastResponse.json()) as MovieRoastResponse;
 
+				// Only count and add to titles if roast succeeded
 				results.processed++;
+				results.titles.push(movie.title);
+
+				// Update progress in DB
+				if (runId) {
+					await tracker.updateProgress(runId, results.titles, results.processed);
+				}
 
 				if (roastData.cached) {
 					results.cached++;
@@ -114,6 +148,11 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 
 		console.log(`[${correlationId}] Cron job completed:`, cronResult);
 
+		// Complete run in DB
+		if (runId) {
+			await tracker.completeRun(runId, null);
+		}
+
 		// Step 6: Log completion
 		await logger.logResponse(200, cronResult);
 
@@ -122,6 +161,11 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 		finalStatus = 500;
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.error(`[${correlationId}] Cron job failed:`, error);
+		
+		// Fail run in DB
+		if (runId) {
+			await tracker.failRun(runId, error);
+		}
 
 		await logger.logResponse(500, { error: errorMessage });
 
@@ -177,14 +221,20 @@ export async function handleCronTrigger(env: Env, ctx?: ExecutionContext): Promi
 }
 
 /**
- * Status endpoint - returns note about KV removal
+ * Status endpoint - returns recent runs from D1
  * GET /cron/status
  */
 export async function handleCronStatus(env: Env): Promise<Response> {
-	return json(
-		{
-			message: "Cron status history is no longer stored in KV. Check server logs."
-		},
-		200
-	);
+	try {
+		const tracker = new CronTracker(env, 'movie_roast');
+		const history = await tracker.getHistory(20);
+		
+		return json({
+			job: 'movie_roast',
+			runs: history
+		}, 200);
+	} catch (error) {
+		console.error('[CronStatus] Failed to fetch history:', error);
+		return json({ error: 'Failed to fetch cron history' }, 500);
+	}
 }

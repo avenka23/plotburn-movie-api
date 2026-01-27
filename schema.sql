@@ -77,3 +77,22 @@ CREATE TABLE IF NOT EXISTS streaming_providers (
 
 CREATE INDEX IF NOT EXISTS idx_streaming_providers_movie ON streaming_providers(tmdb_movie_id);
 
+CREATE TABLE IF NOT EXISTS cron_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_name TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  duration_ms INTEGER,                -- Calculated duration for analytics
+  status TEXT NOT NULL,                -- 'running' | 'success' | 'failed'
+  movies_roasted_count INTEGER DEFAULT 0,
+  movie_titles TEXT,                  -- comma separated
+  cursor TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_cron_runs_active
+ON cron_runs(job_name, status);
+
+-- Enforce single active run per job at database level
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cron_single_active
+ON cron_runs(job_name) WHERE status='running';
