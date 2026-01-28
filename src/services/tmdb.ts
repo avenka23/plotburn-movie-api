@@ -262,40 +262,40 @@ export async function fetchPopularMovies(env: Env): Promise<TMDBNowPlayingRespon
 	const logger = new Logger(env, '/api/tmdb/popular', 'GET');
 
 	const apiStartTime = Date.now();
-	const allResults: any[] = [];
 	
-	// Fetch 2 pages max (40 results)
-	for (let page = 1; page <= 2; page++) {
-		const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${env.TMDB_API_KEY}&page=${page}&region=IN`);
-		
-		if (!res.ok) {
-			console.warn(`[TMDB] Failed to fetch popular page ${page}, skipping`);
-			continue;
-		}
-
-		const data = (await res.json()) as TMDBNowPlayingResponse;
-		allResults.push(...data.results);
-		
-		if (data.total_pages <= page) break;
+	// Fetch 1 page only (20 results)
+	const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${env.TMDB_API_KEY}&page=1&region=IN`);
+	
+	if (!res.ok) {
+		const apiDuration = Date.now() - apiStartTime;
+		await logger.logExternalAPICall(
+			'TMDB (Popular Movies)',
+			{ endpoint: 'popular', region: 'IN', page: 1 },
+			undefined,
+			`${res.status} ${res.statusText}`,
+			apiDuration
+		);
+		throw new Error('TMDB popular fetch failed');
 	}
 
+	const data = (await res.json()) as TMDBNowPlayingResponse;
 	const apiDuration = Date.now() - apiStartTime;
 
-	// Log the bulk operation
+	// Log the operation
 	await logger.logExternalAPICall(
 		'TMDB (Popular Movies)',
-		{ endpoint: 'popular', region: 'IN', pages: 2 },
-		{ count: allResults.length },
+		{ endpoint: 'popular', region: 'IN', page: 1 },
+		{ count: data.results.length },
 		undefined,
 		apiDuration
 	);
 
-	// Normalize to TMDBNowPlayingResponse format for consistency
+	// Return top 20 popular movies
 	return {
 		page: 1,
-		results: allResults.slice(0, 40),
+		results: data.results.slice(0, 20),
 		total_pages: 1,
-		total_results: allResults.length,
+		total_results: data.results.length,
 		dates: { maximum: '', minimum: '' } // Not applicable for popular
 	};
 }

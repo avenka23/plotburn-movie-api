@@ -1,4 +1,4 @@
-import type { Env } from './types';
+import type { Env, MovieQueueMessage } from './types';
 import { json } from './utils/response';
 import { Logger } from './utils/logger';
 import { validateApiKey, isPublicEndpoint } from './utils/auth';
@@ -6,6 +6,7 @@ import { handleNowPlaying } from './handlers/nowPlaying';
 import { handlePopularMovies } from './handlers/popular';
 import { handleMovieRoast, handleMovieTruth } from './handlers/movieRoast';
 import { runDailyRoastGeneration, handleCronTrigger, handleCronStatus } from './handlers/cron';
+import { handleMovieQueueBatch } from './handlers/queueConsumer';
 
 export type { Env };
 
@@ -111,5 +112,10 @@ export default {
 			// Flush logs to R2
 			await logger.flush(status);
 		}
+	},
+
+	// Queue consumer handler - processes movies sent to the queue
+	async queue(batch: MessageBatch<MovieQueueMessage>, env: Env): Promise<void> {
+		await handleMovieQueueBatch(batch, env);
 	},
 };

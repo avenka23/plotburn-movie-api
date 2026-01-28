@@ -124,7 +124,10 @@ You will receive raw research data about a movie. Parse it to understand:
 3. HOW PEOPLE ARE REACTING - Critic/audience reactions and quotes
 4. THE GAP - The disconnect between what it is vs what people expect
 5. AUDIENCE RECEPTION - Score (1-10), label, reasoning, and sources`,
-        cache_control: { type: 'ephemeral' },
+        cache_control: { 
+          type: 'ephemeral',
+          ttl: '1h'  // Cache for 1 hour to reduce costs during batch processing
+        },
             },
             {
                 type: 'text',
@@ -143,7 +146,10 @@ A teenager wrote this on their phone during a math class, and Hollywood turned i
 REGIONAL (TAMIL) - Vaa Vaathiyaar
 
 This movie's concept is legendary. A cop is possessed by a dead superstar, and he fights hackers with the power of nostalgia. Everyone just agreed to make it! It is a wild fever dream. The story runs entirely on vibes and hero worship. A ghost is piloting a human body to beat up cyber-criminals. If you are looking for realism, you walked into the wrong party. Just sit back and enjoy the chaos.`,
-                cache_control: { type: 'ephemeral' },
+                cache_control: { 
+                  type: 'ephemeral',
+                  ttl: '1h'  // Cache for 1 hour to reduce costs during batch processing
+                },
             },
         ],
 

@@ -1,10 +1,8 @@
-import type { Env, CronResult, NowPlayingResponse, MovieRoastResponse, NowPlayingMovie, CronHistoryEntry } from '../types';
+import type { Env, CronResult, NowPlayingResponse, MovieQueueMessage, NowPlayingMovie } from '../types';
 import { handleNowPlaying } from './nowPlaying';
 import { handlePopularMovies } from './popular';
-import { handleMovieRoast } from './movieRoast';
 import { json } from '../utils/response';
 import { Logger } from '../utils/logger';
-import { CRON_DELAY_MS } from '../constants';
 import { CronTracker } from '../services/cron';
 
 /**
@@ -77,58 +75,24 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 		const duplicateCount = nowPlayingMovies.length + popularMovies.length - movies.length;
 		console.log(`[${correlationId}] Merged: ${movies.length} unique movies (${duplicateCount} duplicates removed)`);
 
-		// Step 4: Process each movie sequentially with rate limiting
-		const results = {
-			processed: 0,
-			cached: 0,
-			generated: 0,
-			failed: 0,
-			failedIds: [] as number[],
-			titles: [] as string[]
-		};
+		// Step 4: Send movies to queue for parallel processing
+		console.log(`[${correlationId}] Sending ${movies.length} movies to queue...`);
 
-		for (let i = 0; i < movies.length; i++) {
-			const movie = movies[i];
-			const movieId = String(movie.id);
-
-			try {
-				console.log(`[${correlationId}] Processing movie ${i + 1}/${movies.length}: ${movie.title} (ID: ${movieId})`);
-
-				const roastResponse = await handleMovieRoast(movieId, env, correlationId);
-				const roastData = (await roastResponse.json()) as MovieRoastResponse;
-
-				// Only count and add to titles if roast succeeded
-				results.processed++;
-				results.titles.push(movie.title);
-
-				// Update progress in DB
-				if (runId) {
-					await tracker.updateProgress(runId, results.titles, results.processed);
+		await env.MOVIE_QUEUE.sendBatch(
+			movies.map(movie => ({
+				body: {
+					movieId: movie.id,
+					title: movie.title,
+					correlationId,
 				}
+			}))
+		);
 
-				if (roastData.cached) {
-					results.cached++;
-					console.log(`[${correlationId}] ✓ Roast cached for ${movie.title}`);
-				} else {
-					results.generated++;
-					console.log(`[${correlationId}] ✓ Generated new roast for ${movie.title}`);
-				}
+		console.log(`[${correlationId}] Queued ${movies.length} movies for processing`);
 
-				// Add delay between movies to avoid rate limits (except after last movie)
-				if (i < movies.length - 1) {
-					await new Promise((resolve) => setTimeout(resolve, CRON_DELAY_MS));
-				}
-			} catch (error) {
-				results.failed++;
-				results.failedIds.push(movie.id);
-				console.error(`[${correlationId}] ✗ Failed to process ${movie.title}:`, error);
-
-				// Continue processing even if one movie fails
-				// Add delay before next movie
-				if (i < movies.length - 1) {
-					await new Promise((resolve) => setTimeout(resolve, CRON_DELAY_MS));
-				}
-			}
+		// Update tracking
+		if (runId) {
+			await tracker.updateProgress(runId, movies.map(m => m.title), movies.length);
 		}
 
 		// Step 5: Create result summary
@@ -137,13 +101,9 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 			trigger: correlationId.startsWith('cron-') ? 'scheduled' : 'manual',
 			correlation_id: correlationId,
 			movies_fetched: movies.length,
-			roasts_processed: results.processed,
-			roasts_cached: results.cached,
-			roasts_generated: results.generated,
-			roasts_failed: results.failed,
-			failed_movie_ids: results.failedIds,
+			movies_queued: movies.length,
 			duration_ms: Date.now() - startTime,
-			status: results.failed === 0 ? 'success' : results.generated > 0 ? 'partial' : 'failed',
+			status: 'success',
 		};
 
 		console.log(`[${correlationId}] Cron job completed:`, cronResult);

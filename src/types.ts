@@ -9,6 +9,7 @@ export interface Env {
 	R2: R2Bucket;
 	plotburn_db: D1Database;
 	RECENT_ROAST_KV: KVNamespace;
+	MOVIE_QUEUE: Queue<MovieQueueMessage>;
 	KV_VERSION: string;
 	LOG_RETENTION_DAYS: number;
 }
@@ -248,14 +249,16 @@ export interface CronResult {
 	trigger: 'scheduled' | 'manual';
 	correlation_id: string;
 	movies_fetched?: number;
-	roasts_processed?: number;
-	roasts_cached?: number;
-	roasts_generated?: number;
-	roasts_failed?: number;
-	failed_movie_ids?: number[];
+	movies_queued?: number;
 	duration_ms?: number;
 	status: 'in_progress' | 'success' | 'partial' | 'failed' | 'skipped';
 	error?: string;
+}
+
+export interface MovieQueueMessage {
+	movieId: number;
+	title: string;
+	correlationId: string;
 }
 
 export interface CronHistoryEntry {
