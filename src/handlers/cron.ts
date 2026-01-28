@@ -1,4 +1,4 @@
-import type { Env, CronResult, NowPlayingResponse, MovieQueueMessage, NowPlayingMovie } from '../types';
+import type { Env, CronResult, NowPlayingResponse, NowPlayingMovie } from '../types';
 import { handleNowPlaying } from './nowPlaying';
 import { handlePopularMovies } from './popular';
 import { json } from '../utils/response';
@@ -78,15 +78,20 @@ export async function runDailyRoastGeneration(env: Env, correlationId: string): 
 		// Step 4: Send movies to queue for parallel processing
 		console.log(`[${correlationId}] Sending ${movies.length} movies to queue...`);
 
-		await env.MOVIE_QUEUE.sendBatch(
-			movies.map(movie => ({
-				body: {
-					movieId: movie.id,
-					title: movie.title,
-					correlationId,
-				}
-			}))
-		);
+		// Cloudflare Queues limits sendBatch to 100 messages per call
+		const QUEUE_BATCH_SIZE = 100;
+		for (let i = 0; i < movies.length; i += QUEUE_BATCH_SIZE) {
+			const chunk = movies.slice(i, i + QUEUE_BATCH_SIZE);
+			await env.MOVIE_QUEUE.sendBatch(
+				chunk.map(movie => ({
+					body: {
+						movieId: movie.id,
+						title: movie.title,
+						correlationId,
+					}
+				}))
+			);
+		}
 
 		console.log(`[${correlationId}] Queued ${movies.length} movies for processing`);
 

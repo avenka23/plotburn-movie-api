@@ -112,12 +112,25 @@ export async function fetchNowPlaying(env: Env): Promise<TMDBNowPlayingResponse>
 		totalDuration
 	);
 
+	// Calculate the actual date boundaries used for filtering to return in response
+	const now = new Date();
+	const tenDaysAgoVal = new Date(now);
+	tenDaysAgoVal.setUTCDate(now.getUTCDate() - 10);
+	const threeDaysAgoVal = new Date(now);
+	threeDaysAgoVal.setUTCDate(now.getUTCDate() - 3);
+
+	const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
 	// Return a new response object with filtered results and normalized pagination
 	return {
 		...firstData,
 		results: filteredResults,
 		total_pages: 1,
 		total_results: filteredCount,
+		dates: {
+			maximum: formatDate(threeDaysAgoVal),
+			minimum: formatDate(tenDaysAgoVal)
+		}
 	};
 }
 

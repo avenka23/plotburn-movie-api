@@ -12,8 +12,14 @@ export function validateApiKey(request: Request, env: Env): Response | null {
 
 	// Check if API_SECRET_KEY is configured
 	if (!env.API_SECRET_KEY) {
-		console.warn('API_SECRET_KEY is not configured - authentication disabled');
-		return null; // Allow request if no key is configured (for development)
+		console.error('API_SECRET_KEY is not configured - rejecting request');
+		return json(
+			{
+				error: 'Service Unavailable',
+				message: 'Authentication is not configured',
+			},
+			503
+		);
 	}
 
 	// Check if API key is provided

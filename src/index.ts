@@ -2,6 +2,7 @@ import type { Env, MovieQueueMessage } from './types';
 import { json } from './utils/response';
 import { Logger } from './utils/logger';
 import { validateApiKey, isPublicEndpoint } from './utils/auth';
+import { checkRateLimit } from './utils/rateLimit';
 import { handleNowPlaying } from './handlers/nowPlaying';
 import { handlePopularMovies } from './handlers/popular';
 import { handleMovieRoast, handleMovieTruth } from './handlers/movieRoast';
@@ -33,6 +34,15 @@ export default {
 				}
 			}
 
+			// Rate limiting - 5 requests per minute per IP
+			const clientIP = req.headers.get('cf-connecting-ip') || 'unknown';
+			const rateLimit = await checkRateLimit(env.RECENT_ROAST_KV, clientIP);
+			if (!rateLimit.allowed) {
+				responseStatus = 429;
+				await logger.logResponse(429, { error: 'Rate limited', clientIP });
+				return json({ error: 'Too many requests. Try again later.' }, 429);
+			}
+
 			// Log incoming request with minimal metadata
 			await logger.logRequest({
 				queryParams: Object.fromEntries(url.searchParams),
@@ -43,15 +53,15 @@ export default {
 			let movieId: string | undefined;
 			let movieTitle: string | undefined;
 
-			if (url.pathname === '/now-playing') {
+			if (url.pathname === '/now-playing' && req.method === 'GET') {
 				response = await handleNowPlaying(env);
-			} else if (url.pathname === '/popular') {
+			} else if (url.pathname === '/popular' && req.method === 'GET') {
 				response = await handlePopularMovies(env);
 			} else if (url.pathname === '/cron/trigger' && req.method === 'POST') {
 				response = await handleCronTrigger(env, ctx);
 			} else if (url.pathname === '/cron/status' && req.method === 'GET') {
 				response = await handleCronStatus(env);
-			} else {
+			} else if (req.method === 'GET') {
 				const movieMatch = url.pathname.match(/^\/movie\/(\d+)$/);
 				const truthMatch = url.pathname.match(/^\/movie\/(\d+)\/truth$/);
 
@@ -64,6 +74,8 @@ export default {
 				} else {
 					response = json({ error: 'Not found' }, 404);
 				}
+			} else {
+				response = json({ error: 'Not found' }, 404);
 			}
 
 			responseStatus = response.status;
@@ -83,7 +95,6 @@ export default {
 			return json(
 				{
 					error: 'Internal server error',
-					message: error instanceof Error ? error.message : 'Unknown error',
 				},
 				500
 			);

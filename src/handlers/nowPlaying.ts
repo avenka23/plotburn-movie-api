@@ -1,6 +1,6 @@
 import type { Env, NowPlayingMovie, TMDBNowPlayingMovie } from '../types';
 import { fetchNowPlaying } from '../services/tmdb';
-import { upsertMovie, addMovieToCategory, clearCategory } from '../services/database';
+import { upsertMovie } from '../services/database';
 import { json } from '../utils/response';
 
 export async function handleNowPlaying(env: Env): Promise<Response> {
@@ -12,15 +12,10 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 	// Save movies to D1 (source of truth) - WITHOUT updating popularity
 	console.log(`[NOW_PLAYING] Saving ${data.results.length} movies to D1...`);
 
-	// Clear existing now_playing category before refreshing
-	await clearCategory(env, 'now_playing');
-
-	let savedCount = 0;
-	let failedCount = 0;
+	const successfulMovieIds: number[] = [];
 
 	for (const movie of data.results) {
 		try {
-			// Convert TMDBNowPlayingMovie to TMDBMovieDetails format for upsert
 			const movieDetails = {
 				id: movie.id,
 				title: movie.title,
@@ -31,7 +26,6 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 				vote_count: movie.vote_count,
 				poster_path: movie.poster_path,
 				overview: movie.overview,
-				// Default values for fields not in now-playing response
 				adult: false,
 				backdrop_path: null,
 				belongs_to_collection: null,
@@ -51,31 +45,23 @@ export async function handleNowPlaying(env: Env): Promise<Response> {
 				video: false,
 			};
 
-			// Pass skipPopularity=true to avoid overwriting popularity if it differs
-			try {
-				await upsertMovie(env, movieDetails, 'en', true);
-			} catch (upsertError) {
-				console.error(`[NOW_PLAYING] Failed to upsert movie ${movie.id} (${movie.title}):`, upsertError);
-				throw upsertError; // Re-throw to catch in outer block
-			}
-			
-			// Add to 'now_playing' category
-			try {
-				await addMovieToCategory(env, movie.id, 'now_playing');
-			} catch (categoryError) {
-				console.error(`[NOW_PLAYING] Failed to add movie ${movie.id} (${movie.title}) to category:`, categoryError);
-				throw categoryError; // Re-throw to catch in outer block
-			}
-			
-			savedCount++;
+			await upsertMovie(env, movieDetails, 'en', true);
+			successfulMovieIds.push(movie.id);
 		} catch (error) {
-			failedCount++;
-			console.error(`[NOW_PLAYING] Failed to save movie ${movie.id} (${movie.title}):`, error);
-			// Continue with other movies even if one fails
+			console.error(`[NOW_PLAYING] Failed to upsert movie ${movie.id} (${movie.title}):`, error);
 		}
 	}
 
-	console.log(`[NOW_PLAYING] D1 save complete: ${savedCount} saved, ${failedCount} failed`);
+	// Atomically refresh category: clear old entries and insert new ones in a single batch
+	const now = Math.floor(Date.now() / 1000);
+	await env.plotburn_db.batch([
+		env.plotburn_db.prepare('DELETE FROM movie_categories WHERE category = ?').bind('now_playing'),
+		...successfulMovieIds.map(id =>
+			env.plotburn_db.prepare('INSERT OR IGNORE INTO movie_categories (movie_id, category, added_at) VALUES (?, ?, ?)').bind(id, 'now_playing', now)
+		),
+	]);
+
+	console.log(`[NOW_PLAYING] D1 save complete: ${successfulMovieIds.length} saved, ${data.results.length - successfulMovieIds.length} failed`);
 
 	// Transform to response format
 	const movies: NowPlayingMovie[] = data.results.map((movie: TMDBNowPlayingMovie) => ({

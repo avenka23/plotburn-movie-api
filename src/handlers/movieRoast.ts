@@ -261,6 +261,16 @@ export async function handleMovieRoast(tmdbId: string, env: Env, correlationId: 
 	// Fetch basic movie metadata from TMDB
 	const movie = await fetchMovieDetails(tmdbId, env, correlationId);
 
+	// Check for required images (at least poster OR backdrop)
+	if (!movie.poster_path && !movie.backdrop_path) {
+		console.warn(`[ROAST] Skipping movie ${tmdbId} (${movie.title}) - Missing both poster and backdrop`);
+		return json({ 
+			skipped: true, 
+			reason: 'Missing both poster and backdrop',
+			tmdbId 
+		});
+	}
+
 	const movieMeta: MovieMeta = {
 		adult: movie.adult,
 		backdrop_path: movie.backdrop_path,
